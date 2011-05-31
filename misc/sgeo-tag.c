@@ -18,9 +18,8 @@
  * Boston, MA  02110-1301  USA.
  */
 
-#include "sgeotags.h"
+#include "sgeo-tag.h"
 #include <string.h>
-#include <libexif/exif-data.h>
 
 SGeoTags read_sgeo_tags(ExifData *exif, ExifIfd ifd)
 {
@@ -99,7 +98,6 @@ SGeoTags read_sgeo_tags(ExifData *exif, ExifIfd ifd)
 	if (entry)
 		collection.SatCount = entry->data[0];
 
-	
 	// UserLongitude
 	entry = exif_content_get_entry (exif->ifd[ifd], (ExifTag)(SGEO_TAG_USER_LONGITUDE));
 	if (entry) collection.UserLongitude = exif_get_srational(entry->data, order);
@@ -388,7 +386,6 @@ void write_sgeo_tags(ExifData *exif,ExifIfd ifd, SGeoTags * collection)
 	if (!entry)
 		entry = create_tag(exif, ifd, (ExifTag)SGEO_TAG_SATCOUNT, 1, EXIF_FORMAT_BYTE);	
 	entry->data[0] = collection->SatCount;
-
 
 	// UserLongitude
 	entry = exif_content_get_entry(exif->ifd[ifd], (ExifTag)SGEO_TAG_USER_LONGITUDE);

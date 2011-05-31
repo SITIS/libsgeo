@@ -24,11 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "libexif/exif-data.h"
 #include "libjpeg/jpeg-data.h"
-
-#include "misc/sgeotags.h"
-#include "misc/ImageInfo.h"
 
 #define LONG_MAX_ 0x7fffffff
 #define LONG_MIN_ (-0x7fffffff - 1)
@@ -51,11 +47,12 @@ struct ImageInfo ReadImageInfo (const char* filepath)
 		return imageInfo;
 	}	
 
-    entry = exif_content_get_entry(exif->ifd[EXIF_IFD_0], (ExifTag)EXIF_TAG_MAKE);
+	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_0], (ExifTag)EXIF_TAG_MAKE);
     if (entry)
 	{
 		length = entry->size;
-		if (length > sizeof(imageInfo.CameraMake)) length = sizeof(imageInfo.CameraMake);
+		if (length > sizeof(imageInfo.CameraMake))
+			length = sizeof(imageInfo.CameraMake);
 		memcpy(imageInfo.CameraMake, entry->data, length);
 	}
 
@@ -65,13 +62,14 @@ struct ImageInfo ReadImageInfo (const char* filepath)
     if (entry)
 	{
 		length = entry->size;
-		if (length > sizeof(imageInfo.CameraModel)) length = sizeof(imageInfo.CameraModel);
+		if (length > sizeof(imageInfo.CameraModel))
+			length = sizeof(imageInfo.CameraModel);
 		memcpy(imageInfo.CameraModel, entry->data, length);
 	}
 	
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], (ExifTag)EXIF_TAG_DATE_TIME_ORIGINAL);
     if (entry)
-        memcpy(imageInfo.DateTime, entry->data, 20);
+        memcpy(imageInfo.DateTime, entry->data, sizeof(imageInfo.DateTime));
 	
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_0], (ExifTag)EXIF_TAG_ORIENTATION);
     if (entry) 
@@ -80,7 +78,6 @@ struct ImageInfo ReadImageInfo (const char* filepath)
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], (ExifTag)EXIF_TAG_FOCAL_LENGTH);
     if (entry) 	
 		imageInfo.FocalLength = exif_get_rational(entry->data,order);
-	
 	
 	// User comments
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], (ExifTag)EXIF_TAG_USER_COMMENT);
@@ -99,7 +96,7 @@ struct ImageInfo ReadImageInfo (const char* filepath)
 	// GPSDateStamp
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_DATE_STAMP);
     if (entry)
-		memcpy(imageInfo.GPSDateStamp, entry->data, 11);
+		memcpy(imageInfo.GPSDateStamp, entry->data, sizeof(imageInfo.GPSDateStamp));
 	
 	// GPSTimeStamp
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_TIME_STAMP);
@@ -124,9 +121,9 @@ struct ImageInfo ReadImageInfo (const char* filepath)
 	
 	// GPSLatitudeRef
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LATITUDE_REF);
-	if (entry) 	
-		memcpy(imageInfo.GPSLatitudeRef, entry->data, 2);
-	
+	if (entry)
+		memcpy(imageInfo.GPSLatitudeRef, entry->data, sizeof(imageInfo.GPSLatitudeRef));
+
 	// GPSLatitude
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LATITUDE);
 	if (entry) 	
@@ -147,7 +144,7 @@ struct ImageInfo ReadImageInfo (const char* filepath)
 	// GPSLongitudeRef
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LONGITUDE_REF);
 	if (entry) 	
-		memcpy(imageInfo.GPSLongitudeRef, entry->data, 2);
+		memcpy(imageInfo.GPSLongitudeRef, entry->data, sizeof(imageInfo.GPSLongitudeRef));
 	
 	// GPSLongitude
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LONGITUDE);
@@ -183,7 +180,7 @@ struct ImageInfo ReadImageInfo (const char* filepath)
 	// GPSImgDirectionRef
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_IMG_DIRECTION_REF);
 	if (entry) 	
-		memcpy(imageInfo.GPSImgDirectionRef, entry->data, 2);
+		memcpy(imageInfo.GPSImgDirectionRef, entry->data, sizeof(imageInfo.GPSImgDirectionRef));
 	
 	// GPSImgDirection
 	imageInfo.GPSImgDirection = -1;
@@ -194,7 +191,7 @@ struct ImageInfo ReadImageInfo (const char* filepath)
 		if (Degrees.denominator != 0)
 			imageInfo.GPSImgDirection = (double)Degrees.numerator / Degrees.denominator;
 	}
-
+	
 	exif_data_unref(exif);
 	return imageInfo;
 }
@@ -205,6 +202,7 @@ void WriteImageInfo (const char* input_file, const char* output_file, struct Ima
 	ExifEntry *entry;
 	ExifByteOrder order;
 	JPEGData *jdata;
+	size_t size, total;
 	
 	ExifRational deg, min, sec;
 	ExifRational time_hours, time_seconds, time_minutes;
@@ -231,6 +229,28 @@ void WriteImageInfo (const char* input_file, const char* output_file, struct Ima
 	if (!entry)
 		entry = create_tag(exif, EXIF_IFD_0, (ExifTag) EXIF_TAG_ORIENTATION, 1, EXIF_FORMAT_SHORT);
 	exif_set_short(entry->data, order, imageInfo->Orientation);
+	
+	// User comments
+	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_USER_COMMENT);
+
+	size = imageInfo->CommentsLength * sizeof(utf16);
+	total = 8 + size;
+	
+	if (entry)
+	{
+		free(entry->data);
+		entry->components = total;
+		entry->size = total;
+		entry->data = malloc(total);
+	}
+	else if (size > 0)
+		entry = create_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_USER_COMMENT, total, EXIF_FORMAT_UNDEFINED);
+	
+	if (entry)
+	{
+		memcpy(entry->data, "UNICODE\0", 8);
+		memcpy(entry->data + 8, imageInfo->Comments, size);
+	}
 	
 	if (imageInfo->GPSLatitude != 0 || imageInfo->GPSLongitude != 0)
 	{
@@ -327,51 +347,6 @@ void WriteImageInfo (const char* input_file, const char* output_file, struct Ima
 	jpeg_data_save_file (jdata, output_file);
 
 	jpeg_data_unref (jdata);
-	exif_data_unref(exif);
-}
-
-void WriteComment (const char* input_file, const char* output_file, struct ImageInfo* imageInfo)
-{
-	ExifData *exif;
-	ExifEntry *entry;
-	JPEGData *jdata;
-	unsigned int exif_data_len;
-	size_t size, total;
-
-	exif = exif_data_new_from_file(input_file);
-	if (!exif)
-	{
-		exif = exif_data_new();
-	}
-
-	// User comments
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_USER_COMMENT);
-
-	size = imageInfo->CommentsLength * sizeof(utf16);
-	total = 8 + size;
-	
-	if (entry)
-	{
-		free(entry->data);
-		entry->components = total;
-		entry->size = total;
-		entry->data = malloc(total);
-	}
-	else if (size > 0)
-		entry = create_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_USER_COMMENT, total, EXIF_FORMAT_UNDEFINED);
-	
-	if (entry)
-	{
-		memcpy(entry->data, "UNICODE\0", 8);
-		memcpy(entry->data + 8, imageInfo->Comments, size);
-		
-		jdata = jpeg_data_new_from_file(input_file);
-		jpeg_data_set_exif_data (jdata, exif);
-		jpeg_data_save_file (jdata, output_file);
-
-		jpeg_data_unref (jdata);
-	}
-
 	exif_data_unref(exif);
 }
 

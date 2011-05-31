@@ -23,8 +23,6 @@
 
 #include <libexif/exif-data.h>
 #include <libexif/exif-format.h>
-#include <libexif/exif-utils.h>
-#include <stdio.h>
 
 typedef enum {
 	SGEO_TAG_VERSIONID = 50001,		// Byte x4
@@ -144,8 +142,8 @@ struct _SGeoTags
 	ExifRational	ResultVViewAngleAccuracy;
 };
 
-SGeoTags read_sgeo_tags(ExifData *exif,ExifIfd ifd);
-void write_sgeo_tags(ExifData *exif,ExifIfd ifd, SGeoTags * collection);
+SGeoTags read_sgeo_tags(ExifData *exif, ExifIfd ifd);
+void write_sgeo_tags(ExifData *exif, ExifIfd ifd, SGeoTags * collection);
 
 ExifEntry *create_tag(ExifData *exif, ExifIfd ifd, ExifTag tag, size_t len, ExifFormat exifFormat);
 

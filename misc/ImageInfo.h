@@ -21,7 +21,7 @@
 #ifndef ImageInfoH
 #define ImageInfoH
 
-#include <misc/sgeotags.h>
+#include <misc/sgeo-tag.h>
 
 #define MAX_COMMENT 2000
 
