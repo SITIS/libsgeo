@@ -31,8 +31,48 @@
 extern "C" {
 #endif /* __cplusplus */
 
+typedef enum {
+	EL_READ = 0,
+	EL_READ_SIZE_BYTE_24,
+	EL_READ_SIZE_BYTE_16,
+	EL_READ_SIZE_BYTE_08,
+	EL_READ_SIZE_BYTE_00,
+	EL_SKIP_BYTES,
+	EL_EXIF_FOUND,
+} ExifLoaderState;
+
+typedef enum {
+	EL_DATA_FORMAT_UNKNOWN,
+	EL_DATA_FORMAT_EXIF,
+	EL_DATA_FORMAT_JPEG,
+	EL_DATA_FORMAT_FUJI_RAW,
+	EL_DATA_FORMAT_APP2
+} ExifLoaderDataFormat;
+
+
 /*! Data used by the loader interface */
 typedef struct _ExifLoader ExifLoader;
+#include "misc/list_exif_loader_struct.h"
+/*! \internal */
+struct _ExifLoader {
+	ExifLoaderState state;
+	ExifLoaderDataFormat data_format;
+
+	/*! Small buffer used for detection of format */
+	unsigned char b[12];
+
+	/*! Number of bytes in the small buffer \c b */
+	unsigned char b_len;
+
+	unsigned int size;
+	unsigned char *buf;
+	unsigned int bytes_read;
+
+	unsigned int ref_count;
+
+	ExifLog *log;
+	ExifMem *mem;
+};
 
 /*! Allocate a new #ExifLoader.
  *
@@ -120,6 +160,9 @@ void exif_loader_get_buf (ExifLoader *loader, const unsigned char **buf,
  * \param[in] log #ExifLog
  */
 void exif_loader_log (ExifLoader *loader, ExifLog *log);
+
+void exif_loader_write_file_app2_sgeo(ExifByteOrder order, ListExifLoader *list_exif_loader, const char *path);
+void exif_loader_get_data_sgeo_app2(ExifData *ed, ExifLoader *loader);
 
 #ifdef __cplusplus
 }

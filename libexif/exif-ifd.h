@@ -29,6 +29,8 @@ typedef enum {
 	EXIF_IFD_GPS,                  /*!< */
 	EXIF_IFD_INTEROPERABILITY,     /*!< */
 	EXIF_IFD_SGEO,
+	EXIF_IFD_ENCRYPT,
+	EXIF_IFD_OBJECT,
 	EXIF_IFD_COUNT                 /*!< Not a real value, just (max_value + 1). */
 } ExifIfd;
 

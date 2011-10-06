@@ -19,33 +19,47 @@
  */
  
 #include "ExifLibImpl.h"
+#include "objects/sgeo-object_reader.h"
+#include "objects/sgeo-object_writer.h"
+#include "misc/checksum.h"
+#include "misc/exif_type_reader.h"
+#include "misc/exif_type_writer.h"
+#include "libexif/exif-tag.h"
+#include "misc/string_routines.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "libjpeg/jpeg-data.h"
 
-#define LONG_MAX_ 0x7fffffff
-#define LONG_MIN_ (-0x7fffffff - 1)
-
+void ReadObjectsData(SGeoObject *objects_table, size_t objects_table_count, ExifData **exif_array, size_t exif_array_count)
+{
+	size_t table_it;
+	for (table_it = 0; table_it < objects_table_count; table_it++)
+	{
+		objects_table[table_it].Data = getObjectData(&objects_table[table_it], exif_array, exif_array_count);
+		objects_table[table_it].DataHash ^= Crc32(objects_table[table_it].Data, objects_table[table_it].DataSize);
+	}
+}
 struct ImageInfo ReadImageInfo (const char* filepath)
 {
-	ExifData *exif;
+	ExifData **exif_array = NULL;
+	ExifData *exif = NULL;
 	ExifEntry *entry;
 	ExifByteOrder order;
 	struct ImageInfo imageInfo = {0};
+	ExifShort sgeo_version = 0;
+	int i = 0;
+	int count = 0;
 
-	ExifRational Degrees, Minutes, Seconds;
-	int deg, min, hour;
-	double sec;
-	size_t length;
+	size_t length, size_char;
 
-	exif = exif_data_new_from_file(filepath);
+	exif_data_new_from_file(filepath, &exif_array, &count);
+	exif = exif_array[0];
 	if (!exif)	
 	{
 		return imageInfo;
-	}	
+	}
 
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_0], (ExifTag)EXIF_TAG_MAKE);
     if (entry)
@@ -67,148 +81,205 @@ struct ImageInfo ReadImageInfo (const char* filepath)
 		memcpy(imageInfo.CameraModel, entry->data, length);
 	}
 	
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], (ExifTag)EXIF_TAG_DATE_TIME_ORIGINAL);
-    if (entry)
-        memcpy(imageInfo.DateTime, entry->data, sizeof(imageInfo.DateTime));
-	
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_0], (ExifTag)EXIF_TAG_ORIENTATION);
-    if (entry) 
-		imageInfo.Orientation = exif_get_short(entry->data, order);
-	
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], (ExifTag)EXIF_TAG_FOCAL_LENGTH);
-    if (entry) 	
-		imageInfo.FocalLength = exif_get_rational(entry->data,order);
-	
-	// User comments
+	exif_mem_read(imageInfo.DateTimeOriginal, NULL, exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_DATE_TIME_ORIGINAL, sizeof(imageInfo.DateTimeOriginal));
+	exif_mem_read(imageInfo.DateTimeDigitized, NULL, exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_DATE_TIME_DIGITIZED, sizeof(imageInfo.DateTimeDigitized));
+	exif_short_read(&imageInfo.Orientation, NULL, exif->ifd[EXIF_IFD_0], EXIF_TAG_ORIENTATION, order);
+	exif_rational_read(&imageInfo.FocalLength, NULL, exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_FOCAL_LENGTH, order);
+	// User exif comments
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], (ExifTag)EXIF_TAG_USER_COMMENT);
     if (entry && entry->size > 8)
 	{
+		size_char = 0;
+		imageInfo.CommentsLength = 0;
+
 		if (memcmp(entry->data, "UNICODE\0", 8) == 0)
+			size_char = sizeof(utf16);
+		else if (memcmp(entry->data, "ASCII\0\0\0", 8) == 0)
+			size_char = 1;
+
+		if (size_char != 0)
 		{
-			length = (entry->size - 8) / sizeof(utf16);
+			length = (entry->size - 8) / size_char;
 			if (length > MAX_COMMENT) length = MAX_COMMENT;
 
-			imageInfo.CommentsLength = length;
-			memcpy(imageInfo.Comments, entry->data + 8, length * sizeof(utf16));
+			if (size_char > 1)// for ASCII set comment length zero
+			{
+				imageInfo.CommentsLength = length - 1;
+				memcpy(imageInfo.Comments, entry->data + 8 + 2, length * size_char); // 2 - size BOM
+			}
+			else
+				memcpy(imageInfo.Comments, entry->data + 8, length * size_char);
 		}
 	}
 	
 	// GPSDateStamp
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_DATE_STAMP);
-    if (entry)
-		memcpy(imageInfo.GPSDateStamp, entry->data, sizeof(imageInfo.GPSDateStamp));
-	
+	exif_mem_read(imageInfo.GPSDateStamp, &imageInfo.ExistGPSDateStamp, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_DATE_STAMP, sizeof(imageInfo.GPSDateStamp));
 	// GPSTimeStamp
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_TIME_STAMP);
-    if (entry) 
-	{
-		Degrees = exif_get_rational(entry->data, order);
-		Minutes = exif_get_rational(entry->data + 0x08, order);
-		Seconds = exif_get_rational(entry->data + 0x10, order);
-		hour = Degrees.numerator / Degrees.denominator;
-		min = Minutes.numerator / Minutes.denominator;
-		sec = (double)Seconds.numerator / Seconds.denominator;
-		imageInfo.GPSTimeStamp = hour * 3600 + min * 60 + sec;
-	}
-	
+	exif_rational_hms_to_int_seconds_read(&imageInfo.GPSTimeStamp, &imageInfo.ExistGPSTimeStamp, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_TIME_STAMP, order);
 	// SGEOVersionID
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_SGEO], (ExifTag)SGEO_TAG_VERSIONID);
-	if (entry && memcmp(entry->data, "SG\0\4", 4) == 0)
+	if (entry && memcmp(entry->data, "SG", 2) == 0)
 	{
-		imageInfo.SGeo = read_sgeo_tags(exif, EXIF_IFD_SGEO);
-		memcpy(imageInfo.SGeo.VersionID, entry->data, 4);
-	}
-	
-	// GPSLatitudeRef
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LATITUDE_REF);
-	if (entry)
-		memcpy(imageInfo.GPSLatitudeRef, entry->data, sizeof(imageInfo.GPSLatitudeRef));
+		sgeo_version = exif_get_short(entry->data + 0x02, exif->priv->order);
 
+		if (sgeo_version >= 4)
+		{
+			imageInfo.SGeo = read_sgeo_tags(exif->ifd[EXIF_IFD_SGEO], exif->priv->order);
+
+			ReadObjectsData(imageInfo.SGeo.ObjectsTable, imageInfo.SGeo.ObjectsTableCount, exif_array, count);
+
+			length = MIN(sizeof(imageInfo.SGeo.VersionID), entry->size);
+			memcpy(imageInfo.SGeo.VersionID, entry->data, length);
+
+			//imageInfo.SGeo.StaticMapCount = (ExifShort)count - 1;
+			//imageInfo.SGeo.StaticMapData = read_sgeo_tags_map(exif_array + 1, EXIF_IFD_SGEO, imageInfo.SGeo.StaticMapCount);
+		}
+	}
+	// GPSLatitudeRef
+	exif_mem_read(imageInfo.GPSLatitudeRef, NULL, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_LATITUDE_REF, sizeof(imageInfo.GPSLatitudeRef));
 	// GPSLatitude
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LATITUDE);
-	if (entry) 	
-	{
-		Degrees = exif_get_rational(entry->data, order);
-		Minutes = exif_get_rational(entry->data + 0x08, order);
-		Seconds = exif_get_rational(entry->data + 0x10, order);
-		
-		if (Degrees.denominator != 0 && Minutes.denominator != 0 && Seconds.denominator != 0)
-		{
-			deg = Degrees.numerator / Degrees.denominator;
-			min = Minutes.numerator / Minutes.denominator;
-			sec = (double)Seconds.numerator / Seconds.denominator;
-			imageInfo.GPSLatitude = decimal(deg, min, sec);
-		}
-	}
-	
+	exif_rational_dms_to_double_degrees_read(&imageInfo.GPSLatitude, &imageInfo.ExistGPSLatitude, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_LATITUDE, order);
 	// GPSLongitudeRef
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LONGITUDE_REF);
-	if (entry) 	
-		memcpy(imageInfo.GPSLongitudeRef, entry->data, sizeof(imageInfo.GPSLongitudeRef));
-	
+	exif_mem_read(imageInfo.GPSLongitudeRef, NULL, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_LONGITUDE_REF, sizeof(imageInfo.GPSLongitudeRef));
 	// GPSLongitude
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LONGITUDE);
-	if (entry) 
-	{
-		Degrees = exif_get_rational(entry->data, order);
-		Minutes = exif_get_rational(entry->data + 0x08, order);
-		Seconds = exif_get_rational(entry->data + 0x10, order);
-		
-		if (Degrees.denominator != 0 && Minutes.denominator != 0 && Seconds.denominator != 0)
-		{
-			deg = Degrees.numerator / Degrees.denominator;
-			min = Minutes.numerator / Minutes.denominator;
-			sec = (double)Seconds.numerator / Seconds.denominator;
-			imageInfo.GPSLongitude = decimal(deg, min, sec);
-		}
-	}
-	
+	exif_rational_dms_to_double_degrees_read(&imageInfo.GPSLongitude, &imageInfo.ExistGPSLongitude, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_LONGITUDE, order);
 	// GPSAltitudeRef
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_ALTITUDE_REF);
-	if (entry) 	
-		imageInfo.GPSAltitudeRef = entry->data[0];
-	
+	exif_mem_read(&imageInfo.GPSAltitudeRef, NULL, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_ALTITUDE_REF, sizeof(imageInfo.GPSAltitudeRef));
 	// GPSAltitude
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_ALTITUDE);
-	if (entry)
-	{
-		Degrees = exif_get_rational(entry->data, order);
-		if (Degrees.denominator != 0)
-			imageInfo.GPSAltitude = (double)Degrees.numerator / Degrees.denominator;
-	}
-	
+	exif_rational_to_double_read(&imageInfo.GPSAltitude, &imageInfo.ExistGPSAltitude, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_ALTITUDE, order);
 	// GPSImgDirectionRef
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_IMG_DIRECTION_REF);
-	if (entry) 	
-		memcpy(imageInfo.GPSImgDirectionRef, entry->data, sizeof(imageInfo.GPSImgDirectionRef));
-	
+	exif_mem_read(imageInfo.GPSImgDirectionRef, NULL, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_IMG_DIRECTION_REF, sizeof(imageInfo.GPSImgDirectionRef));
 	// GPSImgDirection
 	imageInfo.GPSImgDirection = -1;
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_IMG_DIRECTION);
-	if (entry)
-	{
-		Degrees = exif_get_rational(entry->data, order);
-		if (Degrees.denominator != 0)
-			imageInfo.GPSImgDirection = (double)Degrees.numerator / Degrees.denominator;
-	}
-	
-	exif_data_unref(exif);
+	exif_rational_to_double_read(&imageInfo.GPSImgDirection, &imageInfo.ExistGPSImgDirection, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_IMG_DIRECTION, order);
+
+	for (i = 0; i < count; i++)
+		exif_data_unref(exif_array[i]);
 	return imageInfo;
 }
-				  
-void WriteImageInfo (const char* input_file, const char* output_file, struct ImageInfo* imageInfo)
+
+void push_object_data_pointer(SGeoObject *objects_table, size_t objects_table_count, size_t *data_pointers)
 {
-	ExifData *exif;
+	size_t i;
+	for (i = 0; i < objects_table_count; i++)
+	{
+		*data_pointers = (size_t)objects_table->Data;
+		data_pointers++;
+		objects_table++;
+	}
+}
+void pop_object_data_pointer(SGeoObject *objects_table, size_t objects_table_count, size_t *data_pointers)
+{
+	size_t i;
+	for (i = 0; i < objects_table_count; i++)
+	{
+		objects_table->Data = (ExifByte *)*data_pointers;
+		data_pointers++;
+		objects_table++;
+	}
+}
+JPEGSection *WriteObjectsData(SGeoObject *objects_table, size_t objects_table_count, ExifLong *sections_count)
+{
+	size_t table_it;
+	JPEGSection *sections = NULL;// sections for object data
+	*sections_count = 0;
+	for (table_it = 0; table_it < objects_table_count; table_it++)
+	{
+		objects_table[table_it].DataHash = Crc32(objects_table[table_it].Data, objects_table[table_it].DataSize);
+		createDataBlocskObjects(&objects_table[table_it], &sections, sections_count);
+	}
+	return sections;
+}
+void insertObjectTableBlocks(JPEGData *jdata, JPEGSection *sections, ExifLong sections_count)
+{
+	size_t sections_it;
+	unsigned char *p = NULL;
+	// insert nre sections after APP2 SGEO
+	for (sections_it = 0; sections_it < jdata->count; sections_it++)
+	{
+		p = jdata->sections[sections_it].content._generic.data;
+		if (p != NULL && is_sgeo_app2(p))
+		{
+			jdata->sections = (JPEGSection *)realloc(jdata->sections, sizeof(*jdata->sections) * (jdata->count + sections_count));
+			memmove(jdata->sections + (sections_it + 1 + sections_count), jdata->sections + (sections_it + 1), sizeof(*jdata->sections) * (jdata->count - (sections_it + 1)));
+			memcpy(jdata->sections + (sections_it + 1), sections, sizeof(*jdata->sections) * sections_count);
+			jdata->count += sections_count;
+			break;
+		}
+	}
+}
+void createObjectsUID(SGeoTags *sgeo)
+{
+	size_t i, j;
+	size_t imei_uid_size = 20 - 8;
+	char *buf = NULL;
+	SGeoObject null_object = { 0 };
+	SGeoObject *object = NULL;
+	
+	buf = (char* )malloc(imei_uid_size);
+
+	for (i = 0; i < sgeo->ObjectsTableCount; i++)
+	{
+		object = &sgeo->ObjectsTable[i];
+
+		if (memcmp(object, &null_object, sizeof(null_object) == 0))
+			continue;
+
+		for (j = 0; j < imei_uid_size; j++)
+			if (object->UID[j] != 0)
+				break;
+		// if UID not created
+		if (j == imei_uid_size)
+			hex_string_to_hex_bin_unicode((wchar_t* )sgeo->DeviceIMEI, (char* )object->UID, imei_uid_size);// creation UID
+	}
+	free(buf);
+}
+int checkObjectsUID(SGeoTags *sgeo)
+{
+	size_t i, j;
+	SGeoObject null_object = { 0 };
+	SGeoObject *object = NULL;
+	char *uids = NULL;
+	int uids_count = 0;
+	uids = (char* )malloc(sgeo->ObjectsTableCount * 20);// 20 - size UID
+	for (i = 0; i < sgeo->ObjectsTableCount; i++)
+	{
+		object = &sgeo->ObjectsTable[i];
+		if (memcmp(object, &null_object, sizeof(null_object) == 0))
+			continue;
+
+		for (j = 0; j < uids_count; j++)
+			if (memcmp(object->UID, uids + uids_count * 20, sizeof(object->UID) == 0))
+			{
+				free(uids);
+				return 1;
+			}
+		memcpy(uids + uids_count * 20, object->UID, sizeof(object->UID));
+		uids_count++;
+	}
+	free(uids);
+	return 0;
+}
+void WriteImageInfo (const char* input_file, const char* output_file, struct ImageInfo* imageInfo, int *error_code)
+{
+	ExifContent *econtent;
+	ExifData **exif_array = NULL;
+	ExifData *exif = NULL;
 	ExifEntry *entry;
 	ExifByteOrder order;
 	JPEGData *jdata;
+	JPEGSection *data_table_sections = NULL;
+	ExifLong sections_count = 0;
+	size_t data_pointers[60];
 	size_t size, total;
-	
-	ExifRational deg, min, sec;
-	ExifRational time_hours, time_seconds, time_minutes;
-	double dvalue;
-	
-	exif = exif_data_new_from_file(input_file);
+	int i = 0;
+	int count = 0;
+	int uids_ok = 0;
+
+	*error_code = 0;
+
+	exif_data_new_from_file(input_file, &exif_array, &count);
+	exif = exif_array[0];
 	if (!exif)
 	{
 		exif = exif_data_new();
@@ -217,19 +288,10 @@ void WriteImageInfo (const char* input_file, const char* output_file, struct Ima
 	order = exif_data_get_byte_order(exif);
 	
 	// DateTimeOriginal
-    entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_DATE_TIME_ORIGINAL);
-    if (!entry)
-	{
-        entry = create_tag(exif, (ExifTag)EXIF_IFD_EXIF, EXIF_TAG_DATE_TIME_ORIGINAL, 20, EXIF_FORMAT_ASCII);
-		memcpy(entry->data, imageInfo->DateTime, 20);
-	}
-	
+	exif_mem_write(exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_DATE_TIME_ORIGINAL, EXIF_FORMAT_ASCII, imageInfo->DateTimeOriginal, sizeof(imageInfo->DateTimeOriginal), NULL);
+	exif_mem_write(exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_DATE_TIME_DIGITIZED, EXIF_FORMAT_ASCII, imageInfo->DateTimeDigitized, sizeof(imageInfo->DateTimeDigitized), NULL);
 	// Orientation
-	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_0], (ExifTag) EXIF_TAG_ORIENTATION);
-	if (!entry)
-		entry = create_tag(exif, EXIF_IFD_0, (ExifTag) EXIF_TAG_ORIENTATION, 1, EXIF_FORMAT_SHORT);
-	exif_set_short(entry->data, order, imageInfo->Orientation);
-	
+	exif_short_write(exif->ifd[EXIF_IFD_0], EXIF_TAG_ORIENTATION, &imageInfo->Orientation, order, NULL);
 	// User comments
 	entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_USER_COMMENT);
 
@@ -241,7 +303,7 @@ void WriteImageInfo (const char* input_file, const char* output_file, struct Ima
 		free(entry->data);
 		entry->components = total;
 		entry->size = total;
-		entry->data = malloc(total);
+		entry->data = (unsigned char* )malloc(total);
 	}
 	else if (size > 0)
 		entry = create_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_USER_COMMENT, total, EXIF_FORMAT_UNDEFINED);
@@ -252,198 +314,52 @@ void WriteImageInfo (const char* input_file, const char* output_file, struct Ima
 		memcpy(entry->data + 8, imageInfo->Comments, size);
 	}
 	
-	if (imageInfo->GPSLatitude != 0 || imageInfo->GPSLongitude != 0)
+	if (imageInfo->ExistGPSLatitude != 0 && imageInfo->ExistGPSLongitude != 0)
 	{
-		// GPS LatitudeRef
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LATITUDE_REF);
-		if (!entry)
-			entry = create_tag(exif, EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_LATITUDE_REF, 2, EXIF_FORMAT_ASCII);	
-		memcpy(entry->data, imageInfo->GPSLatitudeRef, 2);
-		
 		// GPS Latitude
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LATITUDE);
-		if (!entry)
-			entry = create_tag(exif, EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_LATITUDE, 3, EXIF_FORMAT_RATIONAL);
-		
-		dvalue = imageInfo->GPSLatitude;
-		deg = DoubleToRational( degrees(dvalue) );
-		min = DoubleToRational( minutes(dvalue) );
-		sec = DoubleToRational( seconds(dvalue) );
-		
-		exif_set_rational(entry->data, order, deg);
-		exif_set_rational(entry->data + 0x08, order, min);
-		exif_set_rational(entry->data + 0x10, order, sec);
-
-		// GPS LongitudeRef
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LONGITUDE_REF);
-		if (!entry)
-			entry = create_tag(exif, EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_LONGITUDE_REF, 2, EXIF_FORMAT_ASCII);	
-		memcpy(entry->data, imageInfo->GPSLongitudeRef, 2);
-		
+		exif_mem_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LATITUDE_REF, EXIF_FORMAT_ASCII, imageInfo->GPSLatitudeRef, sizeof(imageInfo->GPSLatitudeRef), NULL);
+		exif_double_degrees_to_rational_dms_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LATITUDE, &imageInfo->GPSLatitude, order, &imageInfo->ExistGPSLatitude);
 		// GPS Longitude
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LONGITUDE);
-		if (!entry)
-			entry = create_tag(exif, EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_LONGITUDE, 3, EXIF_FORMAT_RATIONAL);
-		
-		dvalue = imageInfo->GPSLongitude;
-		deg = DoubleToRational( degrees(dvalue) );
-		min = DoubleToRational( minutes(dvalue) );
-		sec = DoubleToRational( seconds(dvalue) );
-		
-		exif_set_rational(entry->data, order, deg);
-		exif_set_rational(entry->data + 0x08, order, min);
-		exif_set_rational(entry->data + 0x10, order, sec);
-
-		// GPS AltitudeRef
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_ALTITUDE_REF);
-		if (!entry)
-			entry = create_tag(exif, EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_ALTITUDE_REF, 1, EXIF_FORMAT_BYTE);	
-		entry->data[0] = imageInfo->GPSAltitudeRef;
-
+		exif_mem_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LONGITUDE_REF, EXIF_FORMAT_ASCII, imageInfo->GPSLongitudeRef, sizeof(imageInfo->GPSLongitudeRef), NULL);
+		exif_double_degrees_to_rational_dms_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_LONGITUDE, &imageInfo->GPSLongitude, order, &imageInfo->ExistGPSLongitude);
 		// GPS Altitude
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_ALTITUDE);
-		if (!entry)
-			entry = create_tag(exif, EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_ALTITUDE, 1, EXIF_FORMAT_RATIONAL);	
-		exif_set_rational(entry->data, order, DoubleToRational(imageInfo->GPSAltitude));
-
-		// GPS ImgDirectionRef
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_IMG_DIRECTION_REF);
-		if (!entry)
-			entry = create_tag(exif, EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_IMG_DIRECTION_REF, 2, EXIF_FORMAT_ASCII);	
-		memcpy(entry->data, imageInfo->GPSImgDirectionRef, 2);
-
+		exif_mem_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_ALTITUDE_REF, EXIF_FORMAT_BYTE, &imageInfo->GPSAltitudeRef, sizeof(imageInfo->GPSAltitudeRef), &imageInfo->ExistGPSAltitude);
+		exif_double_to_rational_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_ALTITUDE, &imageInfo->GPSAltitude, order, &imageInfo->ExistGPSAltitude);
 		// GPS ImgDirection
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_IMG_DIRECTION);
-		if (!entry)
-			entry = create_tag(exif, EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_IMG_DIRECTION, 1, EXIF_FORMAT_RATIONAL);	
-		exif_set_rational(entry->data, order, DoubleToRational(imageInfo->GPSImgDirection));
-		
-		//GPS TimeStamp
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_TIME_STAMP);
-		if (!entry)
-			entry = create_tag(exif, EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_TIME_STAMP, 3, EXIF_FORMAT_RATIONAL);
-		dvalue = imageInfo->GPSTimeStamp;
-		int hour = dvalue / 3600;
-		time_hours = DoubleToRational(hour);
-		int min = (dvalue - hour * 3600) / 60;
-		time_minutes = DoubleToRational(min);
-		time_seconds = DoubleToRational(dvalue - hour * 3600 - min * 60);
-			
-		exif_set_rational(entry->data, order, time_hours);
-		exif_set_rational(entry->data + 0x08, order, time_minutes);
-		exif_set_rational(entry->data + 0x10, order, time_seconds);
-		
+		exif_mem_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_IMG_DIRECTION_REF, EXIF_FORMAT_ASCII, imageInfo->GPSImgDirectionRef, sizeof(imageInfo->GPSImgDirectionRef), &imageInfo->ExistGPSImgDirection);
+		exif_double_to_rational_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_IMG_DIRECTION, &imageInfo->GPSImgDirection, order, &imageInfo->ExistGPSImgDirection);
+		// GPS TimeStamp
+		exif_int_seconds_to_rational_hms_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_TIME_STAMP, &imageInfo->GPSTimeStamp, order, &imageInfo->ExistGPSTimeStamp);
 		// GPS DateStamp
-		entry = exif_content_get_entry(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_DATE_STAMP);
-		if (!entry)
-			entry = create_tag(exif, (ExifTag)EXIF_IFD_GPS, (ExifTag)EXIF_TAG_GPS_DATE_STAMP, 11, EXIF_FORMAT_ASCII);
-		memcpy(entry->data, imageInfo->GPSDateStamp, 11);
+		exif_mem_write(exif->ifd[EXIF_IFD_GPS], (ExifTag)EXIF_TAG_GPS_DATE_STAMP, EXIF_FORMAT_ASCII, imageInfo->GPSDateStamp, sizeof(imageInfo->GPSDateStamp), &imageInfo->ExistGPSDateStamp);
 	}
-
-	write_sgeo_tags(exif, EXIF_IFD_SGEO, &imageInfo->SGeo);
-
-	jdata = jpeg_data_new_from_file(input_file);
-	jpeg_data_set_exif_data (jdata, exif);
-	jpeg_data_save_file (jdata, output_file);
-
-	jpeg_data_unref (jdata);
-	exif_data_unref(exif);
-}
-
-ExifRational DoubleToRational(double x)
-{
-	const double eps = 1.0e-8;
-	
-	ExifRational rational = {0};
-	
-	long intPart,a,prevNum,num,prevDen,den,tmp;
-	double z,approxAns;
-	
-	if (x == 0)
+	createObjectsUID(&imageInfo->SGeo);
+	uids_ok = checkObjectsUID(&imageInfo->SGeo);
+	if (uids_ok == 0)
 	{
-		rational.numerator = 0;
-		rational.denominator = 1;
-		return rational;
-	}
-	
-	if (fabs(x) > (double) LONG_MAX_ || fabs(x) < (1.0f /  LONG_MAX_))
-	{
-		rational.numerator = 0;
-		rational.denominator = 0;
-		return rational;
-	}
-	
-	if (x < 0.0) x = -x;
-	
-	intPart = (long) x;
-	z = x - intPart;
-	
-	if (z != 0)
-	{
-		z = 1.0 / z;
-		a = (long) z;
-		z = z - a;
-		prevNum = 0;
-		num = 1;
-		prevDen = 1;
-		den = a;
-		approxAns = ((double) den * intPart + num) / den;
-		while (fabs((x - approxAns) / x) >= eps)
+		push_object_data_pointer(imageInfo->SGeo.ObjectsTable, imageInfo->SGeo.ObjectsTableCount, data_pointers);
+		data_table_sections = WriteObjectsData(imageInfo->SGeo.ObjectsTable, imageInfo->SGeo.ObjectsTableCount, &sections_count);
+		jdata = jpeg_data_new_from_file(input_file);
+		add_sgeo_app2(jdata, &imageInfo->SGeo, exif);
+		pop_object_data_pointer(imageInfo->SGeo.ObjectsTable, imageInfo->SGeo.ObjectsTableCount, data_pointers);
+		if (data_table_sections != NULL)
+			insertObjectTableBlocks(jdata, data_table_sections, sections_count);
+
+		// remove SGEO from APP1
+		econtent = exif->ifd[EXIF_IFD_SGEO];
+		if (econtent != NULL)
 		{
-			z = 1.0 / z;
-			a = (long) z;
-			z = z - a;
-			// deal with too-big numbers:
-			if ((double) a * num + prevNum > LONG_MAX_ || (double) a * den + prevDen > LONG_MAX_)
-				break;
-			tmp = a * num + prevNum;
-			prevNum = num;
-			num = tmp;
-			tmp = a * den + prevDen;
-			prevDen = den;
-			den = tmp;
-			approxAns = ((double) den * intPart + num) / den;
+			exif_content_unref (econtent);
+			exif->ifd[EXIF_IFD_SGEO] = NULL;
 		}
-		rational.numerator = (den * intPart + num);
-		rational.denominator = den;
+
+		jpeg_data_set_exif_data (jdata, exif);
+		jpeg_data_save_file (jdata, output_file);
+
+		jpeg_data_unref (jdata);
+		for (i = 0; i < count; i++)
+			exif_data_unref(exif_array[i]);
 	}
 	else
-	{
-		rational.numerator = intPart;
-		rational.denominator = 1;
-	}
-	
-	return rational;
-}
-
-ExifSRational DoubleToSRational(double x)
-{
-	ExifRational r = DoubleToRational(x);
-	ExifSRational s;
-	int sign = x >= 0 ? 1 : -1;
-	s.numerator = sign * r.numerator;
-	s.denominator = r.denominator;
-	
-	return s;
-}
-
-int degrees(double c)
-{
-	return (int) fabs(c);
-}
-
-int minutes(double c)
-{
-	double degs = fabs(c);
-	return (int)((degs - floor(degs)) * 60);
-}
-
-double seconds(double c)
-{
-	return (fabs(c) - degrees(c) - (double)minutes(c) / 60) * 3600;		
-}
-
-double decimal(int degrees, int min, double sec)
-{
-	return (degrees + (double)min / 60 + sec / 3600);
+		*error_code = ERROR_OBJECT_UID_NOT_UNIQE;
 }

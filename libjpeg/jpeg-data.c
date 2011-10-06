@@ -28,7 +28,7 @@
 /* This refers to the exif-i18n.h file from the "exif" package and is
  * NOT to be confused with the libexif/i18n.h file.
  */
-#include "exif-i18n.h"
+#include "exif/exif-i18n.h"
 
 /* realloc that cleans up on memory failure and returns to caller */
 #define CLEANUP_REALLOC(p,s) { \
@@ -84,6 +84,51 @@ jpeg_data_append_section (JPEGData *data)
 	memset(s + data->count, 0, sizeof (JPEGSection));
 	data->sections = s;
 	data->count++;
+}
+void jpeg_data_exclude_section (JPEGData *data, JPEGSection *exclude)
+{
+	unsigned int i;
+	//JPEGSection *s;
+
+	if (!data || !data->count) return;
+
+	for (i = 0; i < data->count; i++)
+		if (&data->sections[i] == exclude)
+		{
+			data->count--;
+
+			switch (exclude->marker)
+			{
+			case JPEG_MARKER_SOI:
+			case JPEG_MARKER_EOI:
+				break;
+			case JPEG_MARKER_APP1:
+				exif_data_unref (exclude->content.app1);
+				break;
+			default:
+				free (exclude->content._generic.data);
+				break;
+			}
+
+			for (; i < data->count; i++)
+				data->sections[i] = data->sections[i + 1];
+			if (data->count > 0)
+			{
+				data->sections = (JPEGSection *)realloc (data->sections,
+					 sizeof (JPEGSection) * (data->count));
+				if (!data->sections)
+				{
+					EXIF_LOG_NO_MEMORY (data->priv->log, "jpeg-data", 
+						sizeof (JPEGSection) * (data->count));
+				}
+			}
+			else
+			{
+				free(data->sections);
+				data->sections = NULL;
+			}
+			break;
+		}
 }
 
 /*! jpeg_data_save_file returns 1 on success, 0 on failure */

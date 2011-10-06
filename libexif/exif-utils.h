@@ -56,14 +56,19 @@ typedef uint32_t	ExifLong;          /* 4 bytes */
 /*! EXIF Signed Long data type */
 typedef int32_t		ExifSLong;         /* 4 bytes */
 
+typedef unsigned short utf16;
+
 /*! EXIF Unsigned Rational data type */
-typedef struct {ExifLong numerator; ExifLong denominator;} ExifRational;
+#pragma pack(push, 1)
+typedef struct {ExifLong numerator; ExifLong denominator;} ExifRational; 
+#pragma pack(pop)
 
 typedef char		ExifUndefined;     /* 1 byte  */
 
 /*! EXIF Signed Rational data type */
+#pragma pack(push, 1)
 typedef struct {ExifSLong numerator; ExifSLong denominator;} ExifSRational;
-
+#pragma pack(pop)
 
 /*! Retrieve an #ExifShort value from memory.
  *
@@ -175,6 +180,14 @@ void exif_convert_utf16_to_utf8 (char *out, const unsigned short *in, int maxlen
 /*! \internal */
 void exif_array_set_byte_order (ExifFormat, unsigned char *, unsigned int,
 		ExifByteOrder o_orig, ExifByteOrder o_new);
+
+ExifRational DoubleToRational(double x);
+ExifSRational DoubleToSRational(double x);
+int degrees(double c);
+int minutes(double c);
+double seconds(double c);
+double decimal(int degrees, int min, double sec);
+
 
 #undef  MIN
 #define MIN(a, b)  (((a) < (b)) ? (a) : (b))

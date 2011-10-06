@@ -18,9 +18,13 @@
  * Boston, MA  02110-1301  USA.
  */
 
+#include <math.h>
 #include "config.h"
-
 #include "exif-utils.h"
+
+#define LONG_MAX_ 0x7fffffff
+#define LONG_MIN_ (-0x7fffffff - 1)
+
 
 void
 exif_array_set_byte_order (ExifFormat f, unsigned char *b, unsigned int n,
@@ -250,4 +254,102 @@ exif_convert_utf16_to_utf8 (char *out, const unsigned short *in, int maxlen)
 		}
 	}
 	*out = 0;
+}
+
+ExifRational DoubleToRational(double x)
+{
+	const double eps = 1.0e-8;
+	
+	ExifRational rational = {0};
+	
+	long intPart,a,prevNum,num,prevDen,den,tmp;
+	double z,approxAns;
+	
+	if (fabs(x) < eps)
+	{
+		rational.numerator = 0;
+		rational.denominator = 1;
+		return rational;
+	}
+	
+	if (fabs(x) > (double) LONG_MAX_ || fabs(x) < (1.0f /  LONG_MAX_))
+	{
+		rational.numerator = 0;
+		rational.denominator = 0;
+		return rational;
+	}
+	
+	if (x < 0.0) x = -x;
+	
+	intPart = (long) x;
+	z = x - intPart;
+	
+	if (fabs(z) > eps)
+	{
+		z = 1.0 / z;
+		a = (long) z;
+		z = z - a;
+		prevNum = 0;
+		num = 1;
+		prevDen = 1;
+		den = a;
+		approxAns = ((double) den * intPart + num) / den;
+		while (fabs((x - approxAns) / x) >= eps)
+		{
+			z = 1.0 / z;
+			a = (long) z;
+			z = z - a;
+			// deal with too-big numbers:
+			if ((double) a * num + prevNum > LONG_MAX_ || (double) a * den + prevDen > LONG_MAX_)
+				break;
+			tmp = a * num + prevNum;
+			prevNum = num;
+			num = tmp;
+			tmp = a * den + prevDen;
+			prevDen = den;
+			den = tmp;
+			approxAns = ((double) den * intPart + num) / den;
+		}
+		rational.numerator = (den * intPart + num);
+		rational.denominator = den;
+	}
+	else
+	{
+		rational.numerator = intPart;
+		rational.denominator = 1;
+	}
+	
+	return rational;
+}
+
+ExifSRational DoubleToSRational(double x)
+{
+	ExifRational r = DoubleToRational(x);
+	ExifSRational s;
+	int sign = x >= 0 ? 1 : -1;
+	s.numerator = sign * r.numerator;
+	s.denominator = r.denominator;
+	
+	return s;
+}
+
+int degrees(double c)
+{
+	return (int) fabs(c);
+}
+
+int minutes(double c)
+{
+	double degs = fabs(c);
+	return (int)((degs - floor(degs)) * 60);
+}
+
+double seconds(double c)
+{
+	return (fabs(c) - degrees(c) - (double)minutes(c) / 60) * 3600;		
+}
+
+double decimal(int degrees, int min, double sec)
+{
+	return (degrees + (double)min / 60 + sec / 3600);
 }

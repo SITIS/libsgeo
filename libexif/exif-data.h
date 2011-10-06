@@ -81,7 +81,7 @@ ExifData *exif_data_new_mem       (ExifMem *);
  * \param[in] path filename including path
  * \return allocated #ExifData, or NULL on error
  */
-ExifData *exif_data_new_from_file (const char *path);
+void exif_data_new_from_file (const char *path, ExifData ***exif_data, int *count);
 
 /*! Allocate a new #ExifData and load EXIF data from a memory buffer.
  *
@@ -179,6 +179,26 @@ typedef enum {
 	/*! Leave the MakerNote alone, which could cause it to be corrupted */
 	EXIF_DATA_OPTION_DONT_CHANGE_MAKER_NOTE = 1 << 2
 } ExifDataOption;
+ 
+
+struct _ExifDataPrivate
+{
+	ExifByteOrder order;
+
+	ExifMnoteData *md;
+
+	ExifLog *log;
+	ExifMem *mem;
+
+	unsigned int ref_count;
+
+	/* Temporarily used while loading data */
+	unsigned int offset_mnote;
+
+	ExifDataOption options;
+	ExifDataType data_type;
+};
+
 
 /*! Return a short textual description of the given #ExifDataOption.
  *
@@ -257,6 +277,13 @@ void exif_data_log  (ExifData *data, ExifLog *log);
 	 exif_content_get_entry(d->ifd[EXIF_IFD_SGEO],t) :		\
 	 exif_content_get_entry(d->ifd[EXIF_IFD_INTEROPERABILITY],t) ?	\
 	 exif_content_get_entry(d->ifd[EXIF_IFD_INTEROPERABILITY],t) : NULL)
+
+void
+exif_data_load_data_content (ExifData *data, ExifIfd ifd,
+			     const unsigned char *d,
+			     unsigned int ds, unsigned int offset, unsigned int recursion_depth);
+
+
 
 #ifdef __cplusplus
 }

@@ -24,14 +24,13 @@
 #include "misc/ImageInfo.h"
 
 struct ImageInfo ReadImageInfo(const char* filepath);
-void WriteImageInfo(const char* input_file, const char* output_file, struct ImageInfo* imginfo);
-
-ExifRational DoubleToRational(double x);
-ExifSRational DoubleToSRational(double x);
-
-int degrees(double c);
-int minutes(double c);
-double seconds(double c);
-double decimal(int degrees, int min, double sec);
+enum
+{
+	ERROR_OBJECT_UID_NOT_UNIQE
+} WriteErrors;
+// 0 - ok
+// 100 - 150 error objects
+// 101 - incorrect uid
+void WriteImageInfo(const char* input_file, const char* output_file, struct ImageInfo* imginfo, int *error_code);
 
 #endif //_EXIF_LIB_IMPL_H_

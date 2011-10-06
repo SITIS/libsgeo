@@ -29,7 +29,10 @@
 #include "exif-log.h"
 #include "i18n.h"
 #include "exif-system.h"
-
+#include "misc/sgeo-map_tag.h"
+#include "misc/sgeo-tag.h"
+#include "objects/sgeo-object_structures.h"
+#include "libexif/exif-loader.h"
 //#include "canon/exif-mnote-data-canon.h"
 //#include "fuji/exif-mnote-data-fuji.h"
 //#include "olympus/exif-mnote-data-olympus.h"
@@ -40,7 +43,7 @@
 #include <string.h>
 
 #if defined(__WATCOMC__) || defined(_MSC_VER)
-#      define strncasecmp strnicmp
+#      define strncasecmp _strnicmp
 #endif
 
 #undef JPEG_MARKER_SOI
@@ -51,24 +54,6 @@
 #define JPEG_MARKER_APP1 0xe1
 
 static const unsigned char ExifHeader[] = {0x45, 0x78, 0x69, 0x66, 0x00, 0x00};
-
-struct _ExifDataPrivate
-{
-	ExifByteOrder order;
-
-	ExifMnoteData *md;
-
-	ExifLog *log;
-	ExifMem *mem;
-
-	unsigned int ref_count;
-
-	/* Temporarily used while loading data */
-	unsigned int offset_mnote;
-
-	ExifDataOption options;
-	ExifDataType data_type;
-};
 
 static void *
 exif_data_alloc (ExifData *data, unsigned int i)
@@ -357,7 +342,7 @@ if (data->ifd[(i)]->count) {				\
  * \param[in] recursion_depth number of times this function has been
  * recursively called without returning
  */
-static void
+void
 exif_data_load_data_content (ExifData *data, ExifIfd ifd,
 			     const unsigned char *d,
 			     unsigned int ds, unsigned int offset, unsigned int recursion_depth)
@@ -459,7 +444,10 @@ exif_data_load_data_content (ExifData *data, ExifIfd ifd,
 			 * versions of the standard have defined additional tags. Note that
 			 * 0 is a valid tag in the GPS IFD.
 			 */
-			if (!exif_tag_get_name_in_ifd (tag, ifd) && tag < 50000)
+			if (!exif_tag_get_name_in_ifd (tag, ifd) && 
+				tag < 50000 && 
+				tag != SGEO_TAG_ENCRYPT_VERSION &&
+				tag != SGEO_TAG_OBJECT_TABLE)
 			{
 
 				/*
@@ -546,9 +534,9 @@ exif_data_save_data_content (ExifData *data, ExifContent *ifd,
 			n_ptr++;
 
 		/* The pointer to IFD_GPS is in IFD_0. */
-		if (data->ifd[EXIF_IFD_GPS]->count)
+		if (data->ifd[EXIF_IFD_GPS] != NULL && data->ifd[EXIF_IFD_GPS]->count)
 			n_ptr++;
-		if (data->ifd[EXIF_IFD_SGEO]->count)
+		if (data->ifd[EXIF_IFD_SGEO] != NULL && data->ifd[EXIF_IFD_SGEO]->count)
 			n_ptr++;
 
 		break;
@@ -623,7 +611,8 @@ exif_data_save_data_content (ExifData *data, ExifContent *ifd,
 		}
 
 		/* The pointer to IFD_GPS is in IFD_0, too. */
-		if (data->ifd[EXIF_IFD_GPS]->count) {
+		if (data->ifd[EXIF_IFD_GPS] != NULL && data->ifd[EXIF_IFD_GPS]->count)
+		{
 			exif_set_short (*d + 6 + offset + 0, data->priv->order,
 					EXIF_TAG_GPS_INFO_IFD_POINTER);
 			exif_set_short (*d + 6 + offset + 2, data->priv->order,
@@ -637,7 +626,8 @@ exif_data_save_data_content (ExifData *data, ExifContent *ifd,
 			offset += 12;
 		}
 		/* The pointer to IFD_SGEO is in IFD_0, too. */
-		if (data->ifd[EXIF_IFD_SGEO]->count) {
+		if (data->ifd[EXIF_IFD_SGEO] != NULL && data->ifd[EXIF_IFD_SGEO]->count)
+		{
 			exif_set_short (*d + 6 + offset + 0, data->priv->order,
 					EXIF_TAG_SGEO_IFD_POINTER);
 			exif_set_short (*d + 6 + offset + 2, data->priv->order,
@@ -829,6 +819,7 @@ exif_data_load_data (ExifData *data, const unsigned char *d_orig,
 		LOG_TOO_SMALL;
 		return;
 	}
+
 	if (!memcmp (d, ExifHeader, 6)) {
 		exif_log (data->priv->log, EXIF_LOG_CODE_DEBUG, "ExifData",
 			  "Found EXIF header.");
@@ -914,7 +905,7 @@ exif_data_load_data (ExifData *data, const unsigned char *d_orig,
 	/* Fixed value */
 	if (exif_get_short (d + 8, data->priv->order) != 0x002a)
 		return;
-
+	
 	/* IFD 0 offset */
 	offset = exif_get_long (d + 10, data->priv->order);
 	exif_log (data->priv->log, EXIF_LOG_CODE_DEBUG, "ExifData", 
@@ -1031,19 +1022,85 @@ exif_data_save_data (ExifData *data, unsigned char **d, unsigned int *ds)
 	exif_log (data->priv->log, EXIF_LOG_CODE_DEBUG, "ExifData",
 		  "Saved %i byte(s) EXIF data.", *ds);
 }
-
-ExifData *
-exif_data_new_from_file (const char *path)
+void
+exif_data_new_from_file (const char *path, ExifData ***exif_data, int *count)
 {
-	ExifData *edata;
-	ExifLoader *loader;
+	int i;
+	ExifContent *sgeo = NULL;
+	ExifData *edata = NULL;
+	ExifLoader *loader = NULL;
+	ExifLoader *loader_sgeo_app2 = NULL;
+	ListExifLoader *list_loader_sgeo_app2 = NULL;
+	ListExifLoader *current_loader_sgeo_app2 = NULL;
 
-	loader = exif_loader_new ();
+	// allocate memory for loader
+	loader = exif_loader_new();
+	// read 1024 bytes and fill loader
 	exif_loader_write_file (loader, path);
-	edata = exif_loader_get_data (loader);
-	exif_loader_unref (loader);
+	// reading APP2 SGEO and filling loader
+	*exif_data = (ExifData **)malloc(sizeof(**exif_data));
+	(*exif_data)[0] = exif_loader_get_data (loader);
+	*count = 1;
+	edata = (*exif_data)[0];
+	if (edata != NULL && edata->priv != NULL)
+	{
+		list_loader_sgeo_app2 = (ListExifLoader* )malloc(sizeof(*list_loader_sgeo_app2));
+		list_loader_sgeo_app2->exif_loader = exif_loader_new();
+		list_loader_sgeo_app2->next = NULL;
+		list_loader_sgeo_app2->prev = NULL;
+		// get all APP2 sgeo
+		// one of the list is sgeo tags all other thumbnail maps
+		exif_loader_write_file_app2_sgeo (edata->priv->order, list_loader_sgeo_app2, path);
+		if (size_ListExifLoader(list_loader_sgeo_app2) > 1)
+		{
+			*count = size_ListExifLoader(list_loader_sgeo_app2);
+			*exif_data = (ExifData **)realloc(*exif_data, sizeof(**exif_data) * *count);
+		}
 
-	return (edata);
+		edata = (*exif_data)[0];
+		sgeo = edata->ifd[EXIF_IFD_SGEO];
+		edata->ifd[EXIF_IFD_SGEO] = exif_content_new_mem (edata->priv->mem);
+		exif_loader_get_data_sgeo_app2(edata, list_loader_sgeo_app2->exif_loader);
+
+		current_loader_sgeo_app2 = list_loader_sgeo_app2->next;
+		for (i = 1; i < *count; i++)
+		{
+			edata = exif_loader_get_data (current_loader_sgeo_app2->exif_loader);
+			(*exif_data)[i] = edata;
+
+			edata->ifd[EXIF_IFD_SGEO] = exif_content_new_mem (edata->priv->mem);
+			if (memcmp(current_loader_sgeo_app2->exif_loader->buf + 4, DataBlockMagic, 16) == 0)
+			{
+				edata->size = current_loader_sgeo_app2->exif_loader->bytes_read - 4;
+				edata->data = (unsigned char *)malloc(edata->size);
+				memcpy(edata->data, current_loader_sgeo_app2->exif_loader->buf + 4, edata->size);
+
+			}
+			else
+				exif_loader_get_data_sgeo_app2(edata, current_loader_sgeo_app2->exif_loader);
+			current_loader_sgeo_app2 = current_loader_sgeo_app2->next;
+		}
+	}
+
+	// if SGEO in old format
+	if (sgeo != NULL && sgeo->count > 0)
+	{
+		// if new format SGEO none, then recovery from old format
+		if (edata->ifd[EXIF_IFD_SGEO] != NULL && edata->ifd[EXIF_IFD_SGEO]->count == 0)
+		{
+			exif_content_unref(edata->ifd[EXIF_IFD_SGEO]);
+			edata->ifd[EXIF_IFD_SGEO] = sgeo;
+		}
+		else
+		{
+			// if SGEO new format exists, then on old SGEO unref
+			exif_content_unref(sgeo);
+		}
+	}
+
+	// memory free
+	exif_loader_unref (loader);
+	free_ListExifLoader(list_loader_sgeo_app2);
 }
 
 void
@@ -1256,10 +1313,10 @@ exif_data_option_get_description (ExifDataOption o)
 void
 exif_data_set_option (ExifData *d, ExifDataOption o)
 {
+	int n;
 	if (!d) 
 		return;
-
-	int n = (int)d->priv->options;
+	n = (int)d->priv->options;
 	n |= o;
 	d->priv->options = (ExifDataOption)n;
 }
@@ -1267,9 +1324,10 @@ exif_data_set_option (ExifData *d, ExifDataOption o)
 void
 exif_data_unset_option (ExifData *d, ExifDataOption o)
 {
+	int n;
 	if (!d) 
 		return;
-	int n = (int)d->priv->options;
+	n = (int)d->priv->options;
 	n &= ~o;
 	d->priv->options = (ExifDataOption)n;
 }

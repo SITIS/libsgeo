@@ -20,6 +20,11 @@
  * Boston, MA  02110-1301  USA.
  */
 
+#include "exif-content.h"
+#include "exif-format.h"
+#include "exif-mem.h"
+
+
 #ifndef __EXIF_ENTRY_H__
 #define __EXIF_ENTRY_H__
 
@@ -35,9 +40,12 @@ extern "C" {
 typedef struct _ExifEntry        ExifEntry;
 typedef struct _ExifEntryPrivate ExifEntryPrivate;
 
-#include "exif-content.h"
-#include "exif-format.h"
-#include "exif-mem.h"
+struct _ExifEntryPrivate
+{
+	unsigned int ref_count;
+
+	ExifMem *mem;
+};
 
 /*! Data found in one EXIF tag */
 struct _ExifEntry {

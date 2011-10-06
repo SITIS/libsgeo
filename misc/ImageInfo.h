@@ -25,36 +25,43 @@
 
 #define MAX_COMMENT 2000
 
-typedef unsigned short utf16;
-
+#pragma pack(push, 1)
 struct ImageInfo
 {
-	char CameraMake[32];
-	char CameraModel[40];
-	char DateTime[20]; 		// DateTimeOriginal tag
-	ExifShort Orientation;
-	ExifRational FocalLength;
-	utf16 Comments[MAX_COMMENT]; // first element - BOM mark for utf16
-	size_t CommentsLength;
+	char		CameraMake[32];
+	char		CameraModel[40];
+	char		DateTimeOriginal[20]; // Date and time of original data generation
+	char		DateTimeDigitized[20]; // Date and time of digital data generation
+	ExifShort	Orientation;
+	ExifRational	FocalLength;
+	utf16		Comments[MAX_COMMENT]; // first element - BOM mark for utf16
+	size_t		CommentsLength;
 
 	
-	char GPSDateStamp[11];		// UTC date and time
-	int GPSTimeStamp;
+	ExifByte	ExistGPSDateStamp;
+	char		GPSDateStamp[11];		// UTC date and time
+	ExifByte	ExistGPSTimeStamp;
+	int			GPSTimeStamp; // in seconds
 	
-	char GPSLatitudeRef[2];
-	double GPSLatitude;			// must be >= 0
+	char		GPSLatitudeRef[2];
+	ExifByte	ExistGPSLatitude;
+	double		GPSLatitude;			// must be >= 0
 	
-	char GPSLongitudeRef[2];
-	double GPSLongitude;		// must be >= 0
+	char		GPSLongitudeRef[2];
+	ExifByte	ExistGPSLongitude;
+	double		GPSLongitude;		// must be >= 0
 	
-	ExifByte GPSAltitudeRef;
-	double GPSAltitude;			// must be >= 0
+	ExifByte	GPSAltitudeRef;
+	ExifByte	ExistGPSAltitude;
+	double		GPSAltitude;			// must be >= 0
 	
-	char GPSImgDirectionRef[2];
-	double GPSImgDirection;
+	char		GPSImgDirectionRef[2];
+	ExifByte	ExistGPSImgDirection;
+	double		GPSImgDirection;
 	
 	// SGEO
 	SGeoTags SGeo;
 }; 
+#pragma pack(pop)
 
 #endif

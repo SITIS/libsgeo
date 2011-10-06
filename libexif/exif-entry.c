@@ -36,12 +36,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-struct _ExifEntryPrivate
-{
-	unsigned int ref_count;
-
-	ExifMem *mem;
-};
+#ifndef _MSC_VER
+	#define sprintf_s snprintf
+#endif
 
 /* This function is hidden in exif-data.c */
 ExifLog *exif_data_get_log (ExifData *);
@@ -459,16 +456,16 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 		return;
 	switch (e->format) {
 	case EXIF_FORMAT_UNDEFINED:
-		sprintf (val, maxlen, _("%i bytes undefined data"), e->size);
+		sprintf_s (val, maxlen, _("%i bytes undefined data"), e->size);
 		break;
 	case EXIF_FORMAT_BYTE:
 	case EXIF_FORMAT_SBYTE:
 		v_byte = e->data[0];
-		sprintf (val, maxlen, "0x%02x", v_byte);
+		sprintf_s (val, maxlen, "0x%02x", v_byte);
 		maxlen -= strlen (val);
 		for (i = 1; i < e->components; i++) {
 			v_byte = e->data[i];
-			sprintf (b, sizeof (b), ", 0x%02x", v_byte);
+			sprintf_s (b, sizeof (b), ", 0x%02x", v_byte);
 			strncat (val, b, maxlen);
 			maxlen -= strlen (b);
 			if ((signed)maxlen <= 0) break;
@@ -476,12 +473,12 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 		break;
 	case EXIF_FORMAT_SHORT:
 		v_short = exif_get_short (e->data, o);
-		sprintf (val, maxlen, "%u", v_short);
+		sprintf_s (val, maxlen, "%u", v_short);
 		maxlen -= strlen (val);
 		for (i = 1; i < e->components; i++) {
 			v_short = exif_get_short (e->data +
 				exif_format_get_size (e->format) * i, o);
-			sprintf (b, sizeof (b), ", %u", v_short);
+			sprintf_s (b, sizeof (b), ", %u", v_short);
 			strncat (val, b, maxlen);
 			maxlen -= strlen (b);
 			if ((signed)maxlen <= 0) break;
@@ -489,13 +486,13 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 		break;
 	case EXIF_FORMAT_SSHORT:
 		v_sshort = exif_get_sshort (e->data, o);
-		sprintf (val, maxlen, "%i", v_sshort);
+		sprintf_s (val, maxlen, "%i", v_sshort);
 		maxlen -= strlen (val);
 		for (i = 1; i < e->components; i++) {
 			v_sshort = exif_get_short (e->data +
 				exif_format_get_size (e->format) *
 				i, o);
-			sprintf (b, sizeof (b), ", %i", v_sshort);
+			sprintf_s (b, sizeof (b), ", %i", v_sshort);
 			strncat (val, b, maxlen);
 			maxlen -= strlen (b);
 			if ((signed)maxlen <= 0) break;
@@ -503,13 +500,13 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 		break;
 	case EXIF_FORMAT_LONG:
 		v_long = exif_get_long (e->data, o);
-		sprintf (val, maxlen, "%lu", (long int) v_long);
+		sprintf_s (val, maxlen, "%lu", (long int) v_long);
 		maxlen -= strlen (val);
 		for (i = 1; i < e->components; i++) {
 			v_long = exif_get_long (e->data +
 				exif_format_get_size (e->format) *
 				i, o);
-			sprintf (b, sizeof (b), ", %lu", (long int) v_long);
+			sprintf_s (b, sizeof (b), ", %lu", (long int) v_long);
 			strncat (val, b, maxlen);
 			maxlen -= strlen (b);
 			if ((signed)maxlen <= 0) break;
@@ -517,12 +514,12 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 		break;
 	case EXIF_FORMAT_SLONG:
 		v_slong = exif_get_slong (e->data, o);
-		sprintf (val, maxlen, "%li", (long) v_slong);
+		sprintf_s (val, maxlen, "%li", (long) v_slong);
 		maxlen -= strlen (val);
 		for (i = 1; i < e->components; i++) {
 			v_slong = exif_get_slong (e->data +
 				exif_format_get_size (e->format) * i, o);
-			sprintf (b, sizeof (b), ", %li", (long) v_slong);
+			sprintf_s (b, sizeof (b), ", %li", (long) v_slong);
 			strncat (val, b, maxlen);
 			maxlen -= strlen (b);
 			if ((signed)maxlen <= 0) break;
@@ -534,11 +531,11 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 	case EXIF_FORMAT_RATIONAL:
 		v_rat = exif_get_rational (e->data, o);
 		if (v_rat.denominator)
-			sprintf (val, maxlen, "%2.2lf",
+			sprintf_s (val, maxlen, "%2.2lf",
 				  (double) v_rat.numerator /
 				  (double) v_rat.denominator);
 		else
-			sprintf (val, maxlen, "%lu/%lu",
+			sprintf_s (val, maxlen, "%lu/%lu",
 				  (unsigned long) v_rat.numerator,
 				  (unsigned long) v_rat.denominator);
 		maxlen -= strlen (val);
@@ -546,11 +543,11 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 			v_rat = exif_get_rational (
 				e->data + 8 * i, o);
 			if (v_rat.denominator)
-				sprintf (b, sizeof (b), ", %2.2lf",
+				sprintf_s (b, sizeof (b), ", %2.2lf",
 					  (double) v_rat.numerator /
 					  (double) v_rat.denominator);
 			else
-				sprintf (b, sizeof (b), ", %lu/%lu",
+				sprintf_s (b, sizeof (b), ", %lu/%lu",
 				  (unsigned long) v_rat.numerator,
 				  (unsigned long) v_rat.denominator);
 			strncat (val, b, maxlen);
@@ -561,10 +558,10 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 	case EXIF_FORMAT_SRATIONAL:
 		v_srat = exif_get_srational (e->data, o);
 		if (v_srat.denominator) {
-			sprintf (val, maxlen, "%2.2f",
+			sprintf_s (val, maxlen, "%2.2f",
 				  (double)v_srat.numerator / v_srat.denominator);
 		} else {
-			sprintf (val, maxlen, "%li/%li",
+			sprintf_s (val, maxlen, "%li/%li",
 				  (long) v_srat.numerator,
 				  (long) v_srat.denominator);
 		}
@@ -573,10 +570,10 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 			v_srat = exif_get_srational (
 				e->data + 8 * i, o);
 			if (v_srat.denominator)
-				sprintf (b, sizeof (b), ", %2.2f",
+				sprintf_s (b, sizeof (b), ", %2.2f",
 					  (double)v_srat.numerator / v_srat.denominator);
 			else
-				sprintf (b, sizeof (b), ", %li/%li",
+				sprintf_s (b, sizeof (b), ", %li/%li",
 					  (long) v_srat.numerator,
 					  (long) v_srat.denominator);
 			strncat (val, b, maxlen);
@@ -587,7 +584,7 @@ exif_entry_format_value(ExifEntry *e, char *val, size_t maxlen)
 	case EXIF_FORMAT_DOUBLE:
 	case EXIF_FORMAT_FLOAT:
 	default:
-		sprintf (val, maxlen, _("%i bytes unsupported data type"),
+		sprintf_s (val, maxlen, _("%i bytes unsupported data type"),
 			  e->size);
 		break;
 	}
@@ -853,7 +850,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 
 	/* Sanity check */
 	if (e->size != e->components * exif_format_get_size (e->format)) {
-		sprintf (val, maxlen, _("Invalid size of entry (%i, "
+		sprintf_s (val, maxlen, _("Invalid size of entry (%i, "
 			"expected %li x %i)."), e->size, e->components,
 				exif_format_get_size (e->format));
 		return val;
@@ -926,7 +923,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		strncpy (val, _("Unknown Exif Version"), maxlen);
 		for (i = 0; *versions[i].label; i++) {
 			if (!memcmp (e->data, versions[i].label, 4)) {
-    				sprintf (val, maxlen,
+    				sprintf_s (val, maxlen,
 					_("Exif Version %d.%d"),
 					versions[i].major,
 					versions[i].minor);
@@ -983,7 +980,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			break;
 		}
 		d = (double) v_rat.numerator / (double) v_rat.denominator;
-		sprintf (val, maxlen, "f/%.01lf", d);
+		sprintf_s (val, maxlen, "f/%.01lf", d);
 		break;
 	case EXIF_TAG_APERTURE_VALUE:
 	case EXIF_TAG_MAX_APERTURE_VALUE:
@@ -995,8 +992,8 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			break;
 		}
 		d = (double) v_rat.numerator / (double) v_rat.denominator;
-		sprintf (val, maxlen, _("%.02lf EV"), d);
-		sprintf (b, sizeof (b), _(" (f/%.01f)"), pow (2, d / 2.));
+		sprintf_s (val, maxlen, _("%.02lf EV"), d);
+		sprintf_s (b, sizeof (b), _(" (f/%.01f)"), pow (2, d / 2.));
 		if (maxlen > strlen (val) + strlen (b))
 			strncat (val, b, maxlen - strlen (val));
 		break;
@@ -1030,12 +1027,12 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			}
 		}
 		if (d)
-			sprintf (b, sizeof (b), _(" (35 equivalent: %d mm)"),
+			sprintf_s (b, sizeof (b), _(" (35 equivalent: %d mm)"),
 				  (int) (d * (double) v_rat.numerator /
 				  	     (double) v_rat.denominator));
 
 		d = (double) v_rat.numerator / (double) v_rat.denominator;
-		sprintf (val, maxlen, "%.1lf mm", d);
+		sprintf_s (val, maxlen, "%.1lf mm", d);
 		if (maxlen > strlen (val) + strlen (b))
 			strncat (val, b, maxlen - strlen (val));
 		break;
@@ -1048,7 +1045,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			break;
 		}
 		d = (double) v_rat.numerator / (double) v_rat.denominator;
-		sprintf (val, maxlen, "%.1lf m", d);
+		sprintf_s (val, maxlen, "%.1lf m", d);
 		break;
 	case EXIF_TAG_EXPOSURE_TIME:
 		CF (e, EXIF_FORMAT_RATIONAL, val, maxlen);
@@ -1060,9 +1057,9 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		}
 		d = (double) v_rat.numerator / (double) v_rat.denominator;
 		if (d < 1)
-			sprintf (val, maxlen, _("1/%i"), (int) (0.5 + 1. / d));
+			sprintf_s (val, maxlen, _("1/%i"), (int) (0.5 + 1. / d));
 		else
-			sprintf (val, maxlen, "%i", (int) d);
+			sprintf_s (val, maxlen, "%i", (int) d);
 		if (maxlen > strlen (val) + strlen (_(" sec.")))
 			strncat (val, _(" sec."), maxlen - strlen (val));
 		break;
@@ -1075,12 +1072,12 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			break;
 		}
 		d = (double) v_srat.numerator / (double) v_srat.denominator;
-		sprintf (val, maxlen, _("%.02f EV"), d);
+		sprintf_s (val, maxlen, _("%.02f EV"), d);
 		d = 1. / pow (2, d);
 		if (d < 1)
-		  sprintf (b, sizeof (b), _(" (1/%d sec.)"), (int) (1. / d));
+		  sprintf_s (b, sizeof (b), _(" (1/%d sec.)"), (int) (1. / d));
 		else
-		  sprintf (b, sizeof (b), _(" (%d sec.)"), (int) d);
+		  sprintf_s (b, sizeof (b), _(" (%d sec.)"), (int) d);
 		strncat (val, b, maxlen - strlen (val));
 		break;
 	case EXIF_TAG_BRIGHTNESS_VALUE:
@@ -1092,8 +1089,8 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			break;
 		}
 		d = (double) v_srat.numerator / (double) v_srat.denominator;
-		sprintf (val, maxlen, _("%.02f EV"), d);
-		sprintf (b, sizeof (b), _(" (%.02f cd/m^2)"),
+		sprintf_s (val, maxlen, _("%.02f EV"), d);
+		sprintf_s (b, sizeof (b), _(" (%.02f cd/m^2)"),
 			1. / (M_PI * 0.3048 * 0.3048) * pow (2, d));
 		if (maxlen > strlen (val) + strlen (b))
 			strncat (val, b, maxlen - strlen (val));
@@ -1105,7 +1102,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		if (v_byte == 3)
 			strncpy (val, _("DSC"), maxlen);
 		else
-			sprintf (val, maxlen, _("Internal error (unknown "
+			sprintf_s (val, maxlen, _("Internal error (unknown "
 				  "value %i)"), v_byte);
 		break;
 	case EXIF_TAG_COMPONENTS_CONFIGURATION:
@@ -1136,7 +1133,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			break;
 		}
 		d = (double) v_srat.numerator / (double) v_srat.denominator;
-		sprintf (val, maxlen, _("%.02f EV"), d);
+		sprintf_s (val, maxlen, _("%.02f EV"), d);
 		break;
 	case EXIF_TAG_SCENE_TYPE:
 		CF (e, EXIF_FORMAT_UNDEFINED, val, maxlen);
@@ -1145,7 +1142,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		if (v_byte == 1)
 			strncpy (val, _("Directly photographed"), maxlen);
 		else
-			sprintf (val, maxlen, _("Internal error (unknown "
+			sprintf_s (val, maxlen, _("Internal error (unknown "
 				  "value %i)"), v_byte);
 		break;
 	case EXIF_TAG_YCBCR_SUB_SAMPLING:
@@ -1160,7 +1157,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		else if ((v_short == 2) && (v_short2 == 2))
 			strncpy (val, _("YCbCr4:2:0"), maxlen);
 		else
-			sprintf (val, maxlen, "%u, %u", v_short, v_short2);
+			sprintf_s (val, maxlen, "%u, %u", v_short, v_short2);
 		break;
 	case EXIF_TAG_SUBJECT_AREA:
 		CF (e, EXIF_FORMAT_SHORT, val, maxlen);
@@ -1168,14 +1165,14 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		case 2:
 			v_short  = exif_get_short (e->data, o);
 			v_short2 = exif_get_short (e->data + 2, o);
-			sprintf (val, maxlen, "(x,y) = (%i,%i)",
+			sprintf_s (val, maxlen, "(x,y) = (%i,%i)",
 				  v_short, v_short2);
 			break;
 		case 3:
 			v_short  = exif_get_short (e->data, o);
 			v_short2 = exif_get_short (e->data + 2, o);
 			v_short3 = exif_get_short (e->data + 4, o);
-			sprintf (val, maxlen, _("Within distance %i of "
+			sprintf_s (val, maxlen, _("Within distance %i of "
 				"(x,y) = (%i,%i)"), v_short3, v_short,
 				v_short2);
 			break;
@@ -1184,13 +1181,13 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			v_short2 = exif_get_short (e->data + 2, o);
 			v_short3 = exif_get_short (e->data + 4, o);
 			v_short4 = exif_get_short (e->data + 6, o);
-			sprintf (val, maxlen, _("Within rectangle "
+			sprintf_s (val, maxlen, _("Within rectangle "
 				"(width %i, height %i) around "
 				"(x,y) = (%i,%i)"), v_short3, v_short4,
 				v_short, v_short2);
 			break;
 		default:
-			sprintf (val, maxlen, _("Unexpected number "
+			sprintf_s (val, maxlen, _("Unexpected number "
 				"of components (%li, expected 2, 3, or 4)."),
 				e->components);	
 		}
@@ -1200,11 +1197,11 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		CF (e, EXIF_FORMAT_BYTE, val, maxlen);
 		CC (e, 4, val, maxlen);
 		v_byte = e->data[0];
-		sprintf (val, maxlen, "%u", v_byte);
+		sprintf_s (val, maxlen, "%u", v_byte);
 		maxlen -= strlen (val);
 		for (i = 1; i < e->components; i++) {
 			v_byte = e->data[i];
-			sprintf (b, sizeof (b), ".%u", v_byte);
+			sprintf_s (b, sizeof (b), ".%u", v_byte);
 			strncat (val, b, maxlen);
 			maxlen -= strlen (b);
 			if ((signed)maxlen <= 0) break;
@@ -1232,7 +1229,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		else if (v_byte == 1)
 			strncpy (val, _("Sea level reference"), maxlen);
 		else
-			sprintf (val, maxlen, _("Internal error (unknown "
+			sprintf_s (val, maxlen, _("Internal error (unknown "
 				  "value %i)"), v_byte);
 		break;
 	case EXIF_TAG_GPS_TIME_STAMP:
@@ -1264,7 +1261,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			break;
 		}
 		d = (double) v_rat.numerator / (double) v_rat.denominator;
-		sprintf (val, maxlen, "%02u:%02u:%05.2f", i, j, d);
+		sprintf_s (val, maxlen, "%02u:%02u:%05.2f", i, j, d);
 		break;
 
 	case EXIF_TAG_METERING_MODE:
@@ -1283,7 +1280,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		/* Search the tag */
 		for (i = 0; list2[i].tag && (list2[i].tag != e->tag); i++);
 		if (!list2[i].tag) {
-			sprintf (val, maxlen, _("Internal error (unknown "
+			sprintf_s (val, maxlen, _("Internal error (unknown "
 				  "value %i)"), v_short);
 			break;
 		}
@@ -1292,7 +1289,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		for (j = 0; list2[i].elem[j].values[0] &&
 			    (list2[i].elem[j].index < v_short); j++);
 		if (list2[i].elem[j].index != v_short) {
-			sprintf (val, maxlen, _("Internal error (unknown "
+			sprintf_s (val, maxlen, _("Internal error (unknown "
 				  "value %i)"), v_short);
 			break;
 		}
@@ -1304,7 +1301,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 			if ((maxlen > l) && (strlen (val) < l))
 				strncpy (val, _(list2[i].elem[j].values[k]), maxlen);
 		}
-		if (!val[0]) sprintf (val, maxlen, "%i", v_short);
+		if (!val[0]) sprintf_s (val, maxlen, "%i", v_short);
 
 		break;
 
@@ -1328,7 +1325,7 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		/* Search the tag */
 		for (i = 0; list[i].tag && (list[i].tag != e->tag); i++);
 		if (!list[i].tag) {
-			sprintf (val, maxlen, _("Internal error (unknown "
+			sprintf_s (val, maxlen, _("Internal error (unknown "
 				  "value %i)"), v_short);
 			break;
 		}
@@ -1336,9 +1333,9 @@ exif_entry_get_value (ExifEntry *e, char *val, unsigned int maxlen)
 		/* Find the value */
 		for (j = 0; list[i].strings[j] && (j < v_short); j++);
 		if (!list[i].strings[j])
-			sprintf (val, maxlen, "%i", v_short);
+			sprintf_s (val, maxlen, "%i", v_short);
 		else if (!*list[i].strings[j])
-			sprintf (val, maxlen, _("Unknown value %i"), v_short);
+			sprintf_s (val, maxlen, _("Unknown value %i"), v_short);
 		else
 			strncpy (val, _(list[i].strings[j]), maxlen);
 		break;
@@ -1600,7 +1597,7 @@ exif_entry_initialize (ExifEntry *e, ExifTag tag)
 		e->size = exif_format_get_size (e->format) * e->components;
 		e->data = (unsigned char*)exif_entry_alloc (e, e->size);
 		if (!e->data) break;
-		sprintf ((char *) e->data, e->size,
+		sprintf_s ((char *) e->data, e->size,
 			  "%04i:%02i:%02i %02i:%02i:%02i",
 			  tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
 			  tm->tm_hour, tm->tm_min, tm->tm_sec);

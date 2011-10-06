@@ -23,6 +23,10 @@
 #include "exif-loader.h"
 #include "exif-utils.h"
 #include "i18n.h"
+#include "misc/sgeo-tag.h"
+#include "libexif/exif-loader.h"
+#include "misc/sgeo-map_tag.h"
+#include "objects/sgeo-object_structures.h"
 
 #include <sys/types.h>
 #include <stdlib.h>
@@ -45,44 +49,10 @@
 #define JPEG_MARKER_APP13 0xed
 #undef JPEG_MARKER_COM
 #define JPEG_MARKER_COM 0xfe
-
-typedef enum {
-	EL_READ = 0,
-	EL_READ_SIZE_BYTE_24,
-	EL_READ_SIZE_BYTE_16,
-	EL_READ_SIZE_BYTE_08,
-	EL_READ_SIZE_BYTE_00,
-	EL_SKIP_BYTES,
-	EL_EXIF_FOUND,
-} ExifLoaderState;
-
-typedef enum {
-	EL_DATA_FORMAT_UNKNOWN,
-	EL_DATA_FORMAT_EXIF,
-	EL_DATA_FORMAT_JPEG,
-	EL_DATA_FORMAT_FUJI_RAW
-} ExifLoaderDataFormat;
-
-/*! \internal */
-struct _ExifLoader {
-	ExifLoaderState state;
-	ExifLoaderDataFormat data_format;
-
-	/*! Small buffer used for detection of format */
-	unsigned char b[12];
-
-	/*! Number of bytes in the small buffer \c b */
-	unsigned char b_len;
-
-	unsigned int size;
-	unsigned char *buf;
-	unsigned int bytes_read;
-
-	unsigned int ref_count;
-
-	ExifLog *log;
-	ExifMem *mem;
-};
+#undef JPEG_MARKER_SOF0
+#define JPEG_MARKER_SOF0 0xc0
+#undef JPEG_MARKER_SOS
+#define JPEG_MARKER_SOS 0xda
 
 /*! Magic number for EXIF header */
 static const unsigned char ExifHeader[] = {0x45, 0x78, 0x69, 0x66, 0x00, 0x00};
@@ -119,6 +89,7 @@ exif_loader_write_file (ExifLoader *l, const char *path)
 			  _("The file '%s' could not be opened."), path);
 		return;
 	}
+	//fseek(f, 0x1281a, SEEK_CUR);
 	while (1) {
 		size = fread (data, 1, sizeof (data), f);
 		if (size <= 0) 
@@ -147,6 +118,179 @@ exif_loader_copy (ExifLoader *eld, unsigned char *buf, unsigned int len)
 	eld->bytes_read += len;
 
 	return (eld->bytes_read >= eld->size) ? 0 : 1;
+}
+
+void exif_loader_write_file_app2_sgeo(ExifByteOrder order, ListExifLoader *list_exif_loader, const char *path)
+{
+	unsigned char ch;
+	FILE *f;
+	int size;
+	uint16_t temp;
+	unsigned char *data = NULL;
+	ExifLoader *eld = list_exif_loader->exif_loader;
+	ListExifLoader *loaders = list_exif_loader;
+	unsigned char buf[20];
+
+	if (!eld) 
+		return;
+
+	f = fopen (path, "rb");
+	if (!f) {
+		exif_log (eld->log, EXIF_LOG_CODE_NONE, "ExifLoader",
+			  _("The file '%s' could not be opened."), path);
+		return;
+	}
+
+	while (1)
+	{
+		size = fread (&ch, 1, sizeof (ch), f);
+		if (size <= 0) 
+			break;
+
+		switch (eld->state)
+		{
+		//case EL_EXIF_FOUND:
+			//if (!exif_loader_copy (eld, eld->b + i,
+			//		sizeof (eld->b) - i)) 
+			//	return 0;
+			//return exif_loader_copy (eld, buf, len);
+		case EL_SKIP_BYTES:
+			size = fseek(f, eld->size, SEEK_CUR);
+			if (size == 0)
+			{
+				eld->state = EL_READ;
+				eld->size = 0;
+			}
+			break;
+
+		/*case EL_READ_SIZE_BYTE_24:
+			eld->size |= ch << 24;
+			eld->state = EL_READ_SIZE_BYTE_16;
+			break;
+		case EL_READ_SIZE_BYTE_16:
+			eld->size |= ch << 16;
+			eld->state = EL_READ_SIZE_BYTE_08;
+			break;*/
+		case EL_READ_SIZE_BYTE_08:
+			eld->size |= ch << 8;
+			eld->state = EL_READ_SIZE_BYTE_00;
+			break;
+		case EL_READ_SIZE_BYTE_00:
+			eld->size |= ch << 0;
+			switch (eld->data_format) {
+			case EL_DATA_FORMAT_JPEG:
+				eld->state = EL_SKIP_BYTES;
+				eld->size -= 2;
+				break;
+			case EL_DATA_FORMAT_FUJI_RAW:
+				eld->data_format = EL_DATA_FORMAT_EXIF;
+				eld->state = EL_SKIP_BYTES;
+				eld->size -= 86;
+				break;
+			case EL_DATA_FORMAT_EXIF:
+				eld->state = EL_EXIF_FOUND;
+				break;
+			case EL_DATA_FORMAT_APP2:
+				{
+					if (eld->size < 20)
+					{
+						eld->state = EL_SKIP_BYTES;
+						eld->size = eld->size - 2 - 1;
+						break;
+					}
+					size = fread (buf, 1, 20, f);
+					if (size <= 0)
+						break;
+					if (memcmp(buf, DataBlockMagic, 16) != 0)
+					{
+						if (memcmp(buf, "FPXR", 5) == 0 && buf[5] == 0)// APP2
+						{
+							//size = fread (eld->b, 1, 10, f);
+							temp = exif_get_short(buf + 10, order);
+							if (!(temp == SGEO_TAG_VERSIONID && memcmp(buf + 10 + 8, "SG", 2) == 0))
+							{
+								eld->state = EL_SKIP_BYTES;// if not sgeo continue find
+								if (eld->size >= 19)
+									eld->size = eld->size - 2 - (10 + 10)  - 1; // 4 = размер_маркера_2_байта + размер_зазмера_2_байта, 1 = байт прочтется в следующем цикле
+								break;
+							}
+							//fseek(f, -10L, SEEK_CUR);
+						}
+					}
+					// if sgeo - reading
+					fseek(f, -20L - 4L, SEEK_CUR);
+					eld->size = eld->size + 2;// include header APP2
+					data = (unsigned char*)malloc(eld->size);
+					size = fread(data, 1, eld->size, f);
+					if (size > 0)
+					{
+						exif_loader_copy(eld, data, eld->size);
+						free(data);
+						data = NULL;
+						//fclose(f);
+						loaders->next = (ListExifLoader* )malloc(sizeof(ListExifLoader));
+						loaders->next->prev = loaders;
+						loaders = loaders->next;
+						loaders->next = NULL;
+						loaders->exif_loader = exif_loader_new();
+						eld = loaders->exif_loader;
+						eld->state = EL_READ;
+						//return;
+					}
+					break;
+				}
+				break;
+			default:
+				break;
+			}
+			break;
+
+		default:
+			switch (ch) 
+			{
+			case JPEG_MARKER_APP1:
+			case JPEG_MARKER_SOF0:
+			case JPEG_MARKER_DHT:
+			case JPEG_MARKER_DQT:
+			case JPEG_MARKER_APP0:
+			case JPEG_MARKER_APP13:
+			case JPEG_MARKER_COM:
+				temp = 0;
+				size = fread (eld->b, 1, 2, f);
+				if (size <= 0)
+					break;
+				temp = exif_get_short(eld->b, EXIF_BYTE_ORDER_MOTOROLA);
+				/*
+				temp = ch << 8;
+				size = fread (&ch, 1, sizeof (ch), f);
+				if (size <= 0)
+					break;
+				temp |= ch << 0;*/
+
+				eld->state = EL_SKIP_BYTES;
+				if (temp >= 3)
+					eld->size = temp - 2 - 1;// один байт прочтется в следующем цикле
+				break;
+			case JPEG_MARKER_SOI:
+				break;
+
+			case JPEG_MARKER_APP2:
+				eld->data_format = EL_DATA_FORMAT_APP2;
+				eld->size = 0;
+				eld->state = EL_READ_SIZE_BYTE_08;
+				break;
+			case JPEG_MARKER_SOS:
+				if (loaders->prev != NULL)
+					free_ListExifLoaderItem(loaders);
+				fclose(f);
+				return;
+			}
+		}
+
+	}
+	if (loaders->prev != NULL)
+		free_ListExifLoaderItem(loaders);
+	fclose (f);
 }
 
 unsigned char
@@ -265,6 +409,9 @@ exif_loader_write (ExifLoader *eld, unsigned char *buf, unsigned int len)
 			case EL_DATA_FORMAT_EXIF:
 				eld->state = EL_EXIF_FOUND;
 				break;
+			case EL_DATA_FORMAT_APP2:
+				eld->state = EL_SKIP_BYTES;
+				break;
 			default:
 				break;
 			}
@@ -281,10 +428,14 @@ exif_loader_write (ExifLoader *eld, unsigned char *buf, unsigned int len)
 				eld->size = 0;
 				eld->state = EL_READ_SIZE_BYTE_08;
 				break;
+			case JPEG_MARKER_APP2:
+				eld->data_format = EL_DATA_FORMAT_APP2;
+				eld->size = 0;
+				eld->state = EL_READ_SIZE_BYTE_08;
+				break;
 			case JPEG_MARKER_DHT:
 			case JPEG_MARKER_DQT:
 			case JPEG_MARKER_APP0:
-			case JPEG_MARKER_APP2:
 			case JPEG_MARKER_APP13:
 			case JPEG_MARKER_COM:
 				eld->data_format = EL_DATA_FORMAT_JPEG;
@@ -387,6 +538,13 @@ exif_loader_reset (ExifLoader *loader)
 	loader->data_format = EL_DATA_FORMAT_UNKNOWN;
 }
 
+void exif_loader_get_data_sgeo_app2(ExifData *ed, ExifLoader *loader)
+{
+	if (!loader || (loader->data_format == EL_DATA_FORMAT_UNKNOWN) ||
+	    !loader->bytes_read)
+		return;
+	exif_data_load_data_content(ed, EXIF_IFD_SGEO, loader->buf + 2, loader->bytes_read - 2, 10, 0);
+}
 ExifData *
 exif_loader_get_data (ExifLoader *loader)
 {

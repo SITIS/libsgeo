@@ -87,6 +87,8 @@ void      jpeg_data_dump (JPEGData *data);
 
 void      jpeg_data_append_section (JPEGData *data);
 
+void      jpeg_data_exclude_section (JPEGData *data, JPEGSection *exclude);
+
 void      jpeg_data_log (JPEGData *data, ExifLog *log);
 
 #endif /* __JPEG_DATA_H__ */

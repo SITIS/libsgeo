@@ -1,5 +1,5 @@
 #include <config.h>
-#include "exif-i18n.h"
+#include "exif/exif-i18n.h"
 
 #ifdef HAVE_ICONV
 #  include <iconv.h>
