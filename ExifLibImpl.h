@@ -24,13 +24,9 @@
 #include "misc/ImageInfo.h"
 
 struct ImageInfo ReadImageInfo(const char* filepath);
-enum
-{
-	ERROR_OBJECT_UID_NOT_UNIQE
-} WriteErrors;
-// 0 - ok
+// 0 - ok 
 // 100 - 150 error objects
 // 101 - incorrect uid
-void WriteImageInfo(const char* input_file, const char* output_file, struct ImageInfo* imginfo, int *error_code);
+void WriteImageInfo(const char* input_file, const char* output_file, struct ImageInfo* imginfo);
 
 #endif //_EXIF_LIB_IMPL_H_

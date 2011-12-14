@@ -59,6 +59,11 @@ struct ImageInfo
 	ExifByte	ExistGPSImgDirection;
 	double		GPSImgDirection;
 	
+#ifdef _SGEO_FULL
+	ExifLong    ImageWidth;
+	ExifLong    ImageHeight;
+#endif
+
 	// SGEO
 	SGeoTags SGeo;
 }; 

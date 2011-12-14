@@ -436,7 +436,7 @@ SGeoTags read_sgeo_tags(ExifContent *content, ExifByteOrder order)
 	exif_rational_read(&collection->ResultVViewAngleAccuracy, NULL, content, SGEO_TAG_RESULT_VVIEWANGLEACCURACY, order);
 
 	// GNSSType
-	exif_long_read(&collection->GNSSType, &collection->ExistVViewAngle, content, SGEO_TAG_GNSS_TYPE, order);
+	exif_long_read(&collection->GNSSType, NULL, content, SGEO_TAG_GNSS_TYPE, order);
 
 	// DeviceName
 	read_unicode_string_from_exif(content, SGEO_TAG_DEVICE_NAME, collection->DeviceName, sizeof(collection->DeviceName) / sizeof(*collection->DeviceName));

@@ -27,6 +27,7 @@
 #include "libexif/exif-loader.h"
 #include "misc/sgeo-map_tag.h"
 #include "objects/sgeo-object_structures.h"
+#include "misc/exif-error.h" 
 
 #include <sys/types.h>
 #include <stdlib.h>
@@ -87,6 +88,8 @@ exif_loader_write_file (ExifLoader *l, const char *path)
 	if (!f) {
 		exif_log (l->log, EXIF_LOG_CODE_NONE, "ExifLoader",
 			  _("The file '%s' could not be opened."), path);
+		if (LIB_ERROR_CODE != NULL)
+			*LIB_ERROR_CODE = ERROR_FILE_NOT_OPEN;
 		return;
 	}
 	//fseek(f, 0x1281a, SEEK_CUR);

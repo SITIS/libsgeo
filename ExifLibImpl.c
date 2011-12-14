@@ -26,11 +26,13 @@
 #include "misc/exif_type_writer.h"
 #include "libexif/exif-tag.h"
 #include "misc/string_routines.h"
+#include "misc/exif-error.h" 
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <assert.h>
 
 void ReadObjectsData(SGeoObject *objects_table, size_t objects_table_count, ExifData **exif_array, size_t exif_array_count)
 {
@@ -38,6 +40,15 @@ void ReadObjectsData(SGeoObject *objects_table, size_t objects_table_count, Exif
 	for (table_it = 0; table_it < objects_table_count; table_it++)
 	{
 		objects_table[table_it].Data = getObjectData(&objects_table[table_it], exif_array, exif_array_count);
+#ifdef _DEBUG
+		if (objects_table[table_it].Data == NULL && objects_table[table_it].DataSize > 0)
+		{
+			assert(!(objects_table[table_it].Data == NULL && objects_table[table_it].DataSize > 0));
+			objects_table[table_it].Data = NULL;
+		}
+#endif
+		if (objects_table[table_it].Data == NULL && objects_table[table_it].DataSize > 0)
+			objects_table[table_it].DataSize = 0; // recovery record
 		objects_table[table_it].DataHash ^= Crc32(objects_table[table_it].Data, objects_table[table_it].DataSize);
 	}
 }
@@ -153,6 +164,14 @@ struct ImageInfo ReadImageInfo (const char* filepath)
 	imageInfo.GPSImgDirection = -1;
 	exif_rational_to_double_read(&imageInfo.GPSImgDirection, &imageInfo.ExistGPSImgDirection, exif->ifd[EXIF_IFD_GPS], EXIF_TAG_GPS_IMG_DIRECTION, order);
 
+#ifdef _SGEO_FULL
+	// image width
+	exif_long_read(&imageInfo.ImageWidth, NULL, exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_PIXEL_X_DIMENSION, order);
+	// image height
+	exif_long_read(&imageInfo.ImageHeight, NULL, exif->ifd[EXIF_IFD_EXIF], EXIF_TAG_PIXEL_Y_DIMENSION, order);
+#endif
+
+
 	for (i = 0; i < count; i++)
 		exif_data_unref(exif_array[i]);
 	return imageInfo;
@@ -260,7 +279,7 @@ int checkObjectsUID(SGeoTags *sgeo)
 	free(uids);
 	return 0;
 }
-void WriteImageInfo (const char* input_file, const char* output_file, struct ImageInfo* imageInfo, int *error_code)
+void WriteImageInfo (const char* input_file, const char* output_file, struct ImageInfo* imageInfo)
 {
 	ExifContent *econtent;
 	ExifData **exif_array = NULL;
@@ -275,8 +294,6 @@ void WriteImageInfo (const char* input_file, const char* output_file, struct Ima
 	int i = 0;
 	int count = 0;
 	int uids_ok = 0;
-
-	*error_code = 0;
 
 	exif_data_new_from_file(input_file, &exif_array, &count);
 	exif = exif_array[0];
@@ -361,5 +378,5 @@ void WriteImageInfo (const char* input_file, const char* output_file, struct Ima
 			exif_data_unref(exif_array[i]);
 	}
 	else
-		*error_code = ERROR_OBJECT_UID_NOT_UNIQE;
+		*LIB_ERROR_CODE = ERROR_OBJECT_UID_NOT_UNIQE;
 }
