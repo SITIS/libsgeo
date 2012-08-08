@@ -33,6 +33,7 @@
 #include "misc/sgeo-tag.h"
 #include "objects/sgeo-object_structures.h"
 #include "libexif/exif-loader.h"
+#include "misc/exif-error.h"
 //#include "canon/exif-mnote-data-canon.h"
 //#include "fuji/exif-mnote-data-fuji.h"
 //#include "olympus/exif-mnote-data-olympus.h"
@@ -1081,6 +1082,8 @@ exif_data_new_from_file (const char *path, ExifData ***exif_data, int *count)
 			current_loader_sgeo_app2 = current_loader_sgeo_app2->next;
 		}
 	}
+	else
+		*LIB_ERROR_CODE = ERROR_READING_APP2_SGEO;
 
 	// if SGEO in old format
 	if (sgeo != NULL && sgeo->count > 0)

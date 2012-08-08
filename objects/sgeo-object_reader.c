@@ -49,7 +49,7 @@ lpDataUnitHeader getDataUnit(lpDataBlockHeader pdata_block_header, ExifByte id[2
 	if (memcmp(pdata_block_header, DataBlockMagic, 16) != 0)
 		return NULL;
 	unit = (lpDataUnitHeader)((unsigned char *)pdata_block_header + pdata_block_header->first_object_offset);
-	while (memcmp(unit->id, id, sizeof(id)) != 0 &&
+	while (memcmp(unit->id, id, sizeof(unit->id)) != 0 &&
 		memcmp(unit->id, data_unit_header_null.id, sizeof(data_unit_header_null.id)) != 0 && 
 		   ((unsigned char *)unit - (unsigned char *)pdata_block_header < 0xfffd) // maximum 0xfffd
 		  )

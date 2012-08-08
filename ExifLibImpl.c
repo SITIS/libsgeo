@@ -26,7 +26,7 @@
 #include "misc/exif_type_writer.h"
 #include "libexif/exif-tag.h"
 #include "misc/string_routines.h"
-#include "misc/exif-error.h" 
+#include "misc/exif-error.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -361,6 +361,8 @@ void WriteImageInfo (const char* input_file, const char* output_file, struct Ima
 		pop_object_data_pointer(imageInfo->SGeo.ObjectsTable, imageInfo->SGeo.ObjectsTableCount, data_pointers);
 		if (data_table_sections != NULL)
 			insertObjectTableBlocks(jdata, data_table_sections, sections_count);
+		else
+			*LIB_ERROR_CODE = ERROR_OBJECT_TABLE_INSERT;
 
 		// remove SGEO from APP1
 		econtent = exif->ifd[EXIF_IFD_SGEO];
